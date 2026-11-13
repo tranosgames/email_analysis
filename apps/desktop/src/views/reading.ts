@@ -2,7 +2,8 @@
 // corps sûr, et colonne d'inventaire « Fichiers contenus » (FR-036) + « URL » (FR-037).
 
 import { h, humanSize, toast } from "../dom";
-import type { Address, Attachment, AuthResult, BlockedKind, BlockedResource, Endpoint, Finding, Header, Hop, Ioc, IocKind, IpScope, MailRoute, Message, MessageView, Severity, SourceRef, UrlEntry, UrlLocation } from "../ipc";
+import type { Address, Attachment, AuthResult, BlockedKind, BlockedResource, Endpoint, Finding, Header, Hop, Ioc, IocKind, IpScope, MailRoute, Message, MessageView, Severity, SourceRef, UrlEntry, UrlLocation, Verdict } from "../ipc";
+import { VERDICT_LABEL } from "../ipc";
 
 export interface ReadingActions {
   headersOpen: boolean;
@@ -33,6 +34,7 @@ export function renderReading(view: MessageView, crumbs: Crumb[], a: ReadingActi
   main.append(h("h1", { class: "subject-line" }, m.subject?.trim() || "(sans objet)"));
   main.append(envelope(view));
   if (m.issues.length) main.append(h("ul", { class: "issues" }, ...m.issues.map((i) => h("li", {}, i))));
+  if (m.verdict) main.append(verdictBanner(m.verdict));
   main.append(analysisSection(m, a));
 
   // FR-035 — bouton « Afficher / Masquer les en-têtes »
@@ -882,6 +884,22 @@ function authChip(label: string, r: AuthResult | undefined): HTMLElement {
 
 function verdictOf(m: Message, method: string): AuthResult | undefined {
   return m.auth.find((x) => x.method === method && x.most_recent) ?? m.auth.find((x) => x.method === method && !x.header_name.startsWith("ARC"));
+}
+
+/** FR-045 — verdict de synthèse, toujours visible (même analyse repliée). */
+function verdictBanner(v: Verdict): HTMLElement {
+  return h(
+    "section",
+    { class: `verdict v-${v.level}`, "aria-label": "Verdict" },
+    h(
+      "div",
+      { class: "verdict-head" },
+      h("span", { class: "verdict-level" }, VERDICT_LABEL[v.level]),
+      h("span", { class: "verdict-summary" }, v.summary),
+    ),
+    v.reasons.length ? h("ul", { class: "verdict-reasons" }, ...v.reasons.map((r) => h("li", {}, r))) : null,
+    h("p", { class: "verdict-note" }, `Score ${v.score} · évaluation automatique fondée sur le seul contenu du fichier, à confirmer par l'analyste.`),
+  );
 }
 
 function analysisSection(m: Message, a: ReadingActions): HTMLElement {

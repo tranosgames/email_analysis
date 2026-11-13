@@ -27,6 +27,7 @@ struct Summary {
     attachments: usize,
     urls: usize,
     issues: usize,
+    verdict: Option<mf_core::VerdictLevel>,
 }
 
 #[derive(Serialize)]
@@ -62,6 +63,7 @@ fn summary(id: usize, a: &Analyzed) -> Summary {
         attachments: m.attachments.len(),
         urls: m.urls.len(),
         issues: m.issues.len(),
+        verdict: m.verdict.as_ref().map(|v| v.level),
     }
 }
 

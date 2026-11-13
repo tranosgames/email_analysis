@@ -182,6 +182,9 @@ def main() -> int:
         # FR-013 à FR-023, FR-043, FR-044 : analyse, rapport et indicateurs, sans réseau.
         page.locator(".message-item", has_text="boite Microsoft 365").click()
         page.wait_for_selector("section.analysis")
+        check(page.locator("section.verdict.v-malicious").is_visible() and "malveillant" in page.locator(".verdict-level").inner_text().lower(), "verdict : malveillant")
+        check("imitant « microsoft »" in page.locator(".verdict-reasons").inner_text(), "verdict : raisons affichées")
+        check(page.locator(".message-item", has_text="boite Microsoft 365").locator(".verdict-pill.v-malicious").count() == 1, "pastille de verdict dans la liste")
         auth = page.locator(".auth-row").inner_text()
         check("SPF" in auth and "softfail" in auth and "DMARC" in auth and "fail" in auth, f"puces SPF/DKIM/DMARC ({auth!r})")
         check("corps intact" in page.locator("section.analysis").inner_text(), "DKIM : empreinte du corps recalculée et intacte")
@@ -214,12 +217,14 @@ def main() -> int:
             body = pathlib.Path(dl.value.path()).read_text(encoding="utf-8")
             check(dl.value.suggested_filename.endswith(f".{fmt}"), f"rapport {fmt} : {dl.value.suggested_filename}")
             if fmt == "html":
+                check("Verdict : MALVEILLANT" in body, "rapport HTML : verdict")
                 check("default-src 'none'" in body and "micros0ft-security[.]example" in body, "rapport HTML autonome, indicateurs défangés")
                 (APP / "test-results" / "rapport.html").write_text(body, encoding="utf-8")
             else:
                 rep = json.loads(body)
                 check(rep["evidence"]["sha256"] == expected["phishing-auth.eml"][0]["sha256"], "rapport JSON : SHA-256 de la preuve")
                 check(rep["findings_summary"]["high"] >= 4, "rapport JSON : synthèse des constats")
+                check(rep["verdict"]["level"] == "malicious", "rapport JSON : verdict")
         with page.expect_download() as dl:
             page.click(".ioc-csv")
         csv = pathlib.Path(dl.value.path()).read_text(encoding="utf-8-sig")

@@ -285,6 +285,17 @@ fn print_auth(m: &Message) {
 
 /// FR-015 : constats, du plus grave au moins grave.
 fn print_findings(m: &Message) {
+    if let Some(v) = &m.verdict {
+        println!(
+            "Verdict : {} (score {}) — {}",
+            mf_report::verdict_label(v.level).1,
+            v.score,
+            v.summary
+        );
+        for r in &v.reasons {
+            println!("  · {r}");
+        }
+    }
     println!("Constats ({})", m.findings.len());
     for f in &m.findings {
         let sev = match f.severity {

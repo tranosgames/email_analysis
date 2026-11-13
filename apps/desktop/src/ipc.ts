@@ -108,6 +108,21 @@ export interface DkimCheck {
 
 export type IocKind = "ipv4" | "ipv6" | "domain" | "url" | "email" | "sha256" | "md5";
 
+export type VerdictLevel = "legitimate" | "suspicious" | "malicious";
+
+export interface Verdict {
+  level: VerdictLevel;
+  score: number;
+  summary: string;
+  reasons: string[];
+}
+
+export const VERDICT_LABEL: Record<VerdictLevel, string> = {
+  malicious: "Malveillant",
+  suspicious: "À vérifier",
+  legitimate: "Légitime",
+};
+
 export interface Ioc {
   kind: IocKind;
   value: string;
@@ -180,6 +195,8 @@ export interface Message {
   dkim: DkimCheck[];
   findings: Finding[];
   iocs: Ioc[];
+  /** Verdict de synthèse (FR-045). */
+  verdict: Verdict | null;
   /** « html » : corps HTML d'origine ; « rtf » : HTML reconstitué depuis le RTF Outlook (FR-041). */
   html_source: "html" | "rtf" | null;
   attachments: Attachment[];
@@ -206,6 +223,7 @@ export interface Summary {
   attachments: number;
   urls: number;
   issues: number;
+  verdict: VerdictLevel | null;
 }
 
 export type OpenResult =
@@ -305,6 +323,7 @@ function summarize(id: number, v: MessageView): Summary {
     attachments: m.attachments.length,
     urls: m.urls.length,
     issues: m.issues.length,
+    verdict: m.verdict?.level ?? null,
   };
 }
 

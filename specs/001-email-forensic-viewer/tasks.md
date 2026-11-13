@@ -154,6 +154,7 @@ Workspace Cargo : `crates/mf-*/src/`, app : `apps/desktop/`, tests transverses :
 - [x] T123 [US5] crate `crates/mf-report` : rapport JSON déterministe + HTML autonome imprimable ; CLI `mf findings`, `mf iocs`, `mf report`
 - [x] T124 [US1] WebAssembly : `report`, export des indicateurs ; bureau : `build_report`, `save_text` (dialogue d'enregistrement)
 - [x] T125 [US1] Interface : panneau « Analyse » (authentification + constats), badges sur fichiers et URL, section « Indicateurs », boutons Rapport et Exporter (FR-044) + e2e
+- [x] T126 [US1] Verdict de synthèse `crates/mf-analysis/src/verdict.rs` (poids par règle, seuils, garde-fous tromperie/authentification) + tests unitaires et corpus ; CLI, rapport HTML/JSON, bandeau et pastille de liste + e2e (FR-045)
 
 **Checkpoint**: User Story 1 fonctionnelle et testable seule — MVP « lecteur forensic sûr ».
 
@@ -389,7 +390,7 @@ Task: "T031 Sanitisation HTML dans crates/mf-analysis/src/html.rs"
 | FR-037 | T091, T092, T097 | | FR-038 | T098–T104 |
 | FR-039 | T105–T110 | | FR-040 | T116, T117 |
 | FR-041 | T113, T114, T116 | | FR-042 | T111, T112, T115, T116 |
-| FR-043 | T120, T122, T125 | | FR-044 | T123–T125 |
+| FR-043 | T120, T122, T125 | | FR-044 | T123–T125 | | FR-045 | T126 |
 
 ---
 

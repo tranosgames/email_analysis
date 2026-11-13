@@ -232,6 +232,27 @@ pub enum IocKind {
     Md5,
 }
 
+/// Verdict de synthèse (FR-045).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VerdictLevel {
+    Legitimate,
+    Suspicious,
+    Malicious,
+}
+
+/// Évaluation automatique d'un message : aide au tri, à confirmer par l'analyste.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Verdict {
+    pub level: VerdictLevel,
+    /// Somme des poids des constats (plus c'est haut, plus c'est grave).
+    pub score: u32,
+    /// Une phrase qui justifie le verdict.
+    pub summary: String,
+    /// Principales raisons, de la plus lourde à la plus légère.
+    pub reasons: Vec<String>,
+}
+
 /// Indicateur de compromission (FR-021, FR-023).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Ioc {
@@ -391,6 +412,8 @@ pub struct Message {
     pub findings: Vec<Finding>,
     /// Indicateurs de compromission dédoublonnés (FR-021).
     pub iocs: Vec<Ioc>,
+    /// Verdict de synthèse (FR-045).
+    pub verdict: Option<Verdict>,
     /// Corps MIME brut tel que transmis (EML), pour la vérification DKIM ; jamais sérialisé.
     #[serde(skip)]
     pub raw_body: Option<Vec<u8>>,

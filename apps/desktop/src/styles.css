@@ -406,3 +406,22 @@ button { font: inherit; color: inherit; }
 .iocs code { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; user-select: all; }
 .iocs .ioc-loc { font-size: 11.5px; color: var(--ink-soft); }
 .iocs .file-actions { margin: 0 0 var(--s2); }
+
+/* ——— Verdict de synthèse (FR-045) ——— */
+.verdict { border: 2px solid var(--rule); border-radius: 8px; padding: var(--s3) var(--s4); margin: 0 0 var(--s3); background: var(--sheet); }
+.verdict-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s2) var(--s3); }
+.verdict-level { font-size: 19px; font-weight: 800; letter-spacing: 0.02em; text-transform: uppercase; }
+.verdict-summary { font-size: 14px; }
+.verdict-reasons { margin: var(--s2) 0 0; padding-left: 1.2em; font-size: 13px; }
+.verdict-reasons li { margin: 1px 0; overflow-wrap: anywhere; }
+.verdict-note { margin: var(--s2) 0 0; font-size: 11.5px; color: var(--ink-soft); }
+.verdict.v-malicious { border-color: var(--sev-high); background: color-mix(in srgb, var(--sev-high) 9%, var(--sheet)); }
+.verdict.v-malicious .verdict-level { color: var(--sev-high); }
+.verdict.v-suspicious { border-color: var(--sev-medium); background: color-mix(in srgb, var(--sev-medium) 11%, var(--sheet)); }
+.verdict.v-suspicious .verdict-level { color: color-mix(in srgb, var(--sev-medium) 55%, var(--ink)); }
+.verdict.v-legitimate { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 9%, var(--sheet)); }
+.verdict.v-legitimate .verdict-level { color: var(--ok); }
+.verdict-pill { border-radius: 4px; padding: 0 5px; font-weight: 700; font-size: 11px; }
+.verdict-pill.v-malicious { background: var(--sev-high); color: var(--sev-high-ink); }
+.verdict-pill.v-suspicious { background: var(--sev-medium); color: var(--sev-medium-ink); }
+.verdict-pill.v-legitimate { border: 1px solid var(--ok); color: var(--ok); }

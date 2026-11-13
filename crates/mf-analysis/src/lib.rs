@@ -12,6 +12,7 @@ pub mod html;
 pub mod iocs;
 pub mod links;
 pub mod urls;
+pub mod verdict;
 
 use mf_core::{Disposition, Message};
 use std::collections::HashMap;
@@ -52,4 +53,5 @@ pub fn analyze(msg: &mut Message) {
     }
     msg.findings = findings::evaluate(msg);
     msg.iocs = iocs::extract(msg);
+    msg.verdict = Some(verdict::evaluate(msg));
 }

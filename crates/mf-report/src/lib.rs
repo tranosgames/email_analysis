@@ -66,6 +66,7 @@ pub fn report_json(
         evidence: &'a Evidence,
         provenance: &'a str,
         findings_summary: Counts,
+        verdict: Option<&'a mf_core::Verdict>,
         message: Message,
     }
     let r = Report {
@@ -78,9 +79,33 @@ pub fn report_json(
         evidence,
         provenance,
         findings_summary: counts(&msg.findings),
+        verdict: msg.verdict.as_ref(),
         message: without_bodies(msg),
     };
     serde_json::to_string_pretty(&r).unwrap_or_else(|e| format!("{{\"error\":\"{e}\"}}"))
+}
+
+/// Classe CSS et libellé d'un niveau de verdict.
+pub fn verdict_label(level: mf_core::VerdictLevel) -> (&'static str, &'static str) {
+    match level {
+        mf_core::VerdictLevel::Malicious => ("malicious", "MALVEILLANT"),
+        mf_core::VerdictLevel::Suspicious => ("suspicious", "À VÉRIFIER"),
+        mf_core::VerdictLevel::Legitimate => ("legitimate", "LÉGITIME"),
+    }
+}
+
+/// Les raisons reprennent des titres de constats ; aucun domaine n'y reste cliquable.
+fn defang_text(s: &str) -> String {
+    s.split(' ')
+        .map(|w| {
+            if w.contains('.') && w.chars().any(|c| c.is_ascii_alphabetic()) && !w.ends_with('.') {
+                w.replace('.', "[.]")
+            } else {
+                w.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn esc(s: &str) -> String {
@@ -176,7 +201,7 @@ table{border-collapse:collapse;width:100%;margin:4px 0 8px}th,td{border-bottom:1
 th{font-size:12px;color:var(--soft);font-weight:700}code,.mono{font-family:ui-monospace,'JetBrains Mono',Consolas,monospace;font-size:12px;overflow-wrap:anywhere}
 .sev{display:inline-block;border-radius:4px;padding:0 6px;font-weight:700;font-size:12px}
 .high{background:#b3261e;color:#fff}.medium{background:#e8a317;color:#2a1a00}.low{background:#dde8f0}.info{background:#eef1f4;color:var(--soft)}
-.ok{color:#17733a;font-weight:700}.ko{color:#b3261e;font-weight:700}.summary{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.ok{color:#17733a;font-weight:700}.ko{color:#b3261e;font-weight:700}.summary{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.verdict{border:2px solid;border-radius:8px;padding:10px 14px;margin:12px 0}.verdict p,.verdict ul{margin:4px 0}.verdict-level{font-size:20px;font-weight:800}.verdict.malicious{border-color:#b3261e;background:#fbeaea}.verdict.malicious .verdict-level{color:#b3261e}.verdict.suspicious{border-color:#b8860b;background:#fdf6e3}.verdict.suspicious .verdict-level{color:#8a6100}.verdict.legitimate{border-color:#17733a;background:#e9f6ee}.verdict.legitimate .verdict-level{color:#17733a}
 pre{white-space:pre-wrap;overflow-wrap:anywhere;font:11.5px/1.4 ui-monospace,Consolas,monospace;background:#f6f8fa;padding:8px;border:1px solid var(--rule)}
 .note{color:var(--soft);font-size:12px}footer{margin-top:32px;color:var(--soft);font-size:12px;border-top:1px solid var(--rule);padding-top:8px}
 @media print{body{padding:0}h2{break-after:avoid}tr{break-inside:avoid}.no-print{display:none}}
@@ -210,6 +235,28 @@ pub fn report_html(
         esc(version),
         esc(generated_utc)
     );
+
+    // Verdict de synthèse (FR-045)
+    if let Some(v) = &msg.verdict {
+        let (class, label) = verdict_label(v.level);
+        let _ = write!(
+            h,
+            "<div class=\"verdict {class}\"><div class=\"verdict-level\">Verdict : {label}</div><p>{}</p>",
+            esc(&v.summary)
+        );
+        if !v.reasons.is_empty() {
+            h.push_str("<ul>");
+            for r in &v.reasons {
+                let _ = write!(h, "<li>{}</li>", esc(&defang_text(r)));
+            }
+            h.push_str("</ul>");
+        }
+        let _ = write!(
+            h,
+            "<p class=\"meta\">Score {} — évaluation automatique fondée sur le seul contenu du fichier, à confirmer par l'analyste.</p></div>",
+            v.score
+        );
+    }
 
     // Identification de la preuve
     h.push_str("<h2>Preuve</h2><table>");

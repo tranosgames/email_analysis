@@ -572,3 +572,20 @@ fn phishing_analysis() {
         "micros0ft-help.example"
     );
 }
+
+/// FR-045 : verdict de synthèse sur le corpus.
+#[test]
+fn verdicts() {
+    use mf_core::VerdictLevel::*;
+    for (file, expected) in [
+        ("eml/phishing-auth.eml", Malicious),
+        ("eml/phishing-basic.eml", Malicious),
+        ("eml/remote-resources.eml", Suspicious),
+        ("msg/unicode.msg", Legitimate),
+    ] {
+        let path = corpus(file);
+        let a = mf_engine::open(&path).expect(file);
+        let v = a.message.verdict.as_ref().expect("verdict");
+        assert_eq!(v.level, expected, "{file} : {} ({})", v.summary, v.score);
+    }
+}
