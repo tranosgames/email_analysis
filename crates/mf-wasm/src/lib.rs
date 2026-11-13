@@ -41,3 +41,53 @@ pub fn extract_attachment(
 pub fn safe_file_name(name: &str) -> String {
     mf_engine::safe_file_name(name)
 }
+
+/// Rapport d'analyse du message désigné par `path` (FR-044) : `format` = « html » ou « json ».
+/// `generated_utc` est fourni par le navigateur (pas d'horloge en WebAssembly).
+#[wasm_bindgen]
+pub fn report(
+    file_name: &str,
+    bytes: Vec<u8>,
+    path: Vec<u32>,
+    format: &str,
+    generated_utc: &str,
+) -> Result<String, JsError> {
+    let a = mf_engine::open_bytes(file_name, bytes).map_err(|e| JsError::new(&e.to_string()))?;
+    let m = mf_engine::descend(&a.message, &path)
+        .ok_or_else(|| JsError::new("message embarqué introuvable"))?;
+    let provenance = path
+        .iter()
+        .map(|i| format!("PJ {i}"))
+        .collect::<Vec<_>>()
+        .join(" › ");
+    let version = env!("CARGO_PKG_VERSION");
+    match format {
+        "html" => Ok(mf_report::report_html(
+            &a.evidence,
+            m,
+            &provenance,
+            generated_utc,
+            version,
+        )),
+        "json" => Ok(mf_report::report_json(
+            &a.evidence,
+            m,
+            &provenance,
+            generated_utc,
+            version,
+        )),
+        other => Err(JsError::new(&format!("format inconnu : {other}"))),
+    }
+}
+
+/// Export des indicateurs de plusieurs messages (`[{source, iocs}]` en JSON) : « csv » ou « json ».
+#[wasm_bindgen]
+pub fn iocs_export(groups_json: &str, format: &str, defang: bool) -> Result<String, JsError> {
+    let groups: Vec<mf_report::IocGroup> =
+        serde_json::from_str(groups_json).map_err(|e| JsError::new(&e.to_string()))?;
+    match format {
+        "csv" => Ok(mf_report::iocs_csv(&groups, defang)),
+        "json" => Ok(mf_report::iocs_json(&groups, defang)),
+        other => Err(JsError::new(&format!("format inconnu : {other}"))),
+    }
+}

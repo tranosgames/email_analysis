@@ -300,6 +300,9 @@ fn convert(node: &Node<'_>, depth: usize) -> Message {
             },
             content_id,
             extractable: embedded_node_is_none,
+            detected_type: None,
+            detected_mime: None,
+            flags: Vec::new(),
             embedded,
             data,
         });

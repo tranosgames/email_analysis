@@ -7,6 +7,7 @@ members = [
     "crates/mf-analysis",
     "crates/mf-engine",
     "crates/mf-cli",
+    "crates/mf-report",
     "crates/mf-wasm",
     "apps/desktop/src-tauri",
 ]
@@ -17,6 +18,7 @@ default-members = [
     "crates/mf-msg",
     "crates/mf-analysis",
     "crates/mf-engine",
+    "crates/mf-report",
     "crates/mf-cli",
 ]
 
@@ -33,11 +35,13 @@ mf-eml = { path = "crates/mf-eml" }
 mf-msg = { path = "crates/mf-msg" }
 mf-analysis = { path = "crates/mf-analysis" }
 mf-engine = { path = "crates/mf-engine" }
+mf-report = { path = "crates/mf-report" }
 mail-parser = { version = "0.11", features = ["full_encoding"] }
 cfb = "0.15"
 encoding_rs = "0.8"
 sha2 = "0.11"
 md-5 = "0.11"
+sha1 = "0.11"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"

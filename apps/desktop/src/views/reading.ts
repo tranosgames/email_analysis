@@ -2,7 +2,7 @@
 // corps sûr, et colonne d'inventaire « Fichiers contenus » (FR-036) + « URL » (FR-037).
 
 import { h, humanSize, toast } from "../dom";
-import type { Address, Attachment, BlockedKind, BlockedResource, Endpoint, Header, Hop, IpScope, MailRoute, Message, MessageView, UrlEntry, UrlLocation } from "../ipc";
+import type { Address, Attachment, AuthResult, BlockedKind, BlockedResource, Endpoint, Finding, Header, Hop, Ioc, IocKind, IpScope, MailRoute, Message, MessageView, Severity, SourceRef, UrlEntry, UrlLocation } from "../ipc";
 
 export interface ReadingActions {
   headersOpen: boolean;
@@ -11,6 +11,10 @@ export interface ReadingActions {
   onOpenEmbedded: (index: number) => void;
   /** FR-038 : téléchargement après confirmation. */
   onDownload: (attachment: Attachment) => void;
+  /** FR-044 : rapport d'analyse du message affiché. */
+  onReport: (format: "html" | "json") => void;
+  /** FR-023 : export des indicateurs du message affiché. */
+  onExportIocs: (format: "csv" | "json") => void;
   onGoToDepth: (depth: number) => void;
 }
 
@@ -30,6 +34,7 @@ export function renderReading(view: MessageView, crumbs: Crumb[], a: ReadingActi
   main.append(h("h1", { class: "subject-line" }, m.subject?.trim() || "(sans objet)"));
   main.append(envelope(view));
   if (m.issues.length) main.append(h("ul", { class: "issues" }, ...m.issues.map((i) => h("li", {}, i))));
+  main.append(analysisSection(m, a));
 
   // FR-035 — bouton « Afficher / Masquer les en-têtes »
   const panelId = "headers-panel";
@@ -49,13 +54,28 @@ export function renderReading(view: MessageView, crumbs: Crumb[], a: ReadingActi
         `${a.headersOpen ? "Masquer" : "Afficher"} les en-têtes (${m.headers.length})`,
       ),
       h("span", { class: "kbd", title: "Raccourci clavier" }, "H"),
+      h("span", { class: "spacer" }),
+      h("span", { class: "muted-label" }, "Rapport"),
+      h("button", { class: "btn btn-small report-html", type: "button", onclick: () => a.onReport("html") }, "HTML (imprimable)"),
+      h("button", { class: "btn btn-small report-json", type: "button", onclick: () => a.onReport("json") }, "JSON"),
     ),
   );
-  if (a.headersOpen) main.append(headersPanel(panelId, m.headers));
+  if (a.headersOpen) {
+    const panel = headersPanel(panelId, m.headers);
+    main.append(panel);
+    const target = pendingHeader;
+    if (target !== null) {
+      pendingHeader = null;
+      requestAnimationFrame(() => {
+        const li = panel.querySelector(`li[data-hidx="${target}"]`);
+        if (li) flash(li);
+      });
+    }
+  }
 
   main.append(body(view));
 
-  const grid = h("div", { class: "reading-grid" }, main, inventory(m.attachments, m.urls, a, m.blocked_resources, m.route, m.hops));
+  const grid = h("div", { class: "reading-grid" }, main, inventory(m.attachments, m.urls, a, m.blocked_resources, m.route, m.hops, m.iocs));
   return grid;
 }
 
@@ -138,7 +158,7 @@ function headersPanel(id: string, headers: Header[]): HTMLElement {
         const value = hd.raw.slice(hd.raw.indexOf(":") + 1).replace(/^ /, "");
         return h(
           "li",
-          { title: hd.offset ? `octets ${hd.offset[0]}–${hd.offset[1]}` : "" },
+          { title: hd.offset ? `octets ${hd.offset[0]}–${hd.offset[1]}` : "", "data-hidx": String(hd.index) },
           h("span", { class: "hidx" }, String(hd.index + 1)),
           h("span", { class: "hname" }, `${hd.name}:`),
           h("span", {}, value),
@@ -583,13 +603,14 @@ function routeSection(r: MailRoute, hops: Hop[]): HTMLElement {
   return sec;
 }
 
-function inventory(files: Attachment[], urls: UrlEntry[], a: ReadingActions, blocked: BlockedResource[], route: MailRoute | null, hops: Hop[]): HTMLElement {
+function inventory(files: Attachment[], urls: UrlEntry[], a: ReadingActions, blocked: BlockedResource[], route: MailRoute | null, hops: Hop[], iocs: Ioc[]): HTMLElement {
   return h(
     "aside",
     { class: "inventory", "aria-label": "Contenu du message" },
     route ? routeSection(route, hops) : null,
     filesSection(files, a),
     urlsSection(urls, blocked),
+    iocSection(iocs, a),
   );
 }
 
@@ -607,11 +628,13 @@ function filesSection(files: Attachment[], a: ReadingActions): HTMLElement {
         h(
           "li",
           {},
-          h("div", { class: "file-name" }, f.filename),
+          h("div", { class: "file-name", "data-att": String(f.index) }, f.filename),
+          f.flags.length ? h("div", { class: "flags" }, ...f.flags.map((fl) => flagBadge(ATT_FLAGS[fl] ?? [fl, "low"]))) : null,
           h(
             "div",
             { class: "file-meta" },
             h("span", {}, f.declared_mime ?? "type non déclaré"),
+            f.detected_type ? h("span", { class: f.flags.includes("type_mismatch") ? "detected bad" : "detected", title: "Type réel d'après le contenu" }, `réel : ${f.detected_type}`) : null,
             h("span", {}, humanSize(f.size)),
             f.disposition === "inline" ? h("span", { class: "tag-inline" }, "inline") : h("span", {}, "attaché"),
           ),
@@ -690,7 +713,19 @@ function urlsSection(urls: UrlEntry[], blocked: BlockedResource[]): HTMLElement 
           "li",
           {},
           // Jamais un lien : texte sélectionnable uniquement.
-          h("div", { class: "url-text" }, u.url),
+          h("div", { class: "url-text", "data-url": u.url }, u.url),
+          u.flags.length
+            ? h(
+                "div",
+                { class: "flags" },
+                ...u.flags.map((fl) => {
+                  const [label, sev] = URL_FLAGS[fl] ?? [fl, "low"];
+                  return flagBadge([fl === "lookalike" && u.lookalike_of ? `Sosie de ${u.lookalike_of}` : label, sev]);
+                }),
+              )
+            : null,
+          u.unicode_host ? h("div", { class: "url-note" }, `Domaine réel : ${u.unicode_host}`) : null,
+          u.display_texts.length ? h("div", { class: "url-note" }, `Texte affiché : « ${u.display_texts.join(" » / « ")} »`) : null,
           h(
             "div",
             { class: "url-meta" },
@@ -715,5 +750,205 @@ function urlsSection(urls: UrlEntry[], blocked: BlockedResource[]): HTMLElement 
       ),
     ),
   );
+  return sec;
+}
+
+// ——— Analyse : authentification, constats, indicateurs (FR-013 à FR-023, FR-043) ———
+
+/** En-tête à mettre en évidence une fois le panneau des en-têtes ouvert. */
+let pendingHeader: number | null = null;
+let minorOpen = false;
+
+const SEV_LABEL: Record<Severity, string> = { high: "Élevé", medium: "Moyen", low: "Faible", info: "Info" };
+
+const ATT_FLAGS: Record<string, [string, Severity]> = {
+  executable: ["Exécutable", "high"],
+  double_extension: ["Double extension", "high"],
+  type_mismatch: ["Extension trompeuse", "high"],
+  bidi_or_control_chars: ["Nom maquillé", "high"],
+  macros: ["Macros", "high"],
+  encrypted_archive: ["Archive chiffrée", "medium"],
+  html_attachment: ["Page HTML", "medium"],
+  risky_extension: ["Type à risque", "medium"],
+  tnef: ["TNEF (winmail.dat)", "info"],
+  zero_length: ["Vide", "info"],
+};
+
+const URL_FLAGS: Record<string, [string, Severity]> = {
+  lookalike: ["Domaine sosie", "high"],
+  mixed_script: ["Alphabets mélangés", "high"],
+  credentials: ["Destination masquée (user@hôte)", "high"],
+  text_target_mismatch: ["Texte ≠ destination", "medium"],
+  raw_ip: ["Adresse IP", "medium"],
+  punycode: ["Punycode", "medium"],
+};
+
+const IOC_LABEL: Record<IocKind, string> = {
+  ipv4: "IPv4",
+  ipv6: "IPv6",
+  domain: "Domaines",
+  url: "URL",
+  email: "Adresses",
+  sha256: "SHA-256",
+  md5: "MD5",
+};
+
+function flagBadge([label, sev]: [string, Severity]): HTMLElement {
+  return h("span", { class: `sev sev-${sev}` }, label);
+}
+
+/** Va à l'élément cité par un constat (en-tête, pièce jointe, URL). */
+function goTo(r: SourceRef, a: ReadingActions): void {
+  if (r.kind === "header") {
+    pendingHeader = r.index;
+    if (!a.headersOpen) a.onToggleHeaders();
+    else {
+      const li = document.querySelector(`.headers-panel li[data-hidx="${r.index}"]`);
+      pendingHeader = null;
+      if (li) flash(li);
+    }
+    return;
+  }
+  const sel =
+    r.kind === "attachment"
+      ? `.inventory .file-name[data-att="${r.index}"]`
+      : r.kind === "url"
+        ? `.inventory .url-text[data-url="${CSS.escape(r.url)}"]`
+        : `.hops li:nth-child(${r.index})`;
+  if (r.kind === "hop") document.querySelector<HTMLDetailsElement>(".route details")?.setAttribute("open", "");
+  const el = document.querySelector(sel);
+  if (el) flash(el.closest("li") ?? el);
+}
+
+function refLabel(r: SourceRef): string {
+  switch (r.kind) {
+    case "header":
+      return r.name;
+    case "attachment":
+      return `PJ ${r.index}`;
+    case "url": {
+      // Hôte seul, défangé : le libellé reste lisible et n'est jamais cliquable comme un lien.
+      const host = /^[a-z][a-z0-9+.-]*:\/\/(?:[^/@]*@)?([^/:?#]+)/i.exec(r.url)?.[1] ?? r.url.slice(0, 40);
+      return `URL ${host.replace(/\./g, "[.]")}`;
+    }
+    case "hop":
+      return `saut ${r.index}`;
+  }
+}
+
+function findingItem(f: Finding, a: ReadingActions): HTMLElement {
+  return h(
+    "li",
+    { class: `finding sev-border-${f.severity}` },
+    h("span", { class: `sev sev-${f.severity}` }, SEV_LABEL[f.severity]),
+    h(
+      "div",
+      {},
+      h("div", { class: "finding-title" }, f.title),
+      h("div", { class: "finding-detail" }, f.detail),
+      f.refs.length
+        ? h(
+            "div",
+            { class: "finding-refs" },
+            ...f.refs.slice(0, 6).map((r) =>
+              h("button", { class: "link-btn", type: "button", title: "Aller à l'élément", onclick: () => goTo(r, a) }, refLabel(r)),
+            ),
+          )
+        : null,
+    ),
+  );
+}
+
+function authChip(label: string, r: AuthResult | undefined): HTMLElement {
+  const res = r?.result ?? "absent";
+  const cls = res === "pass" ? "ok" : ["fail", "permerror"].includes(res) ? "high" : res === "softfail" ? "medium" : "low";
+  return h(
+    "span",
+    {
+      class: `auth-chip auth-${cls}`,
+      title: r ? `${r.header_name} n° ${r.header_index + 1}${r.authserv_id ? ` — verdict de ${r.authserv_id}` : ""}\n${r.properties.map(([k, v]) => `${k}=${v}`).join(" ")}` : "Non évalué",
+    },
+    h("strong", {}, label),
+    ` ${res}`,
+  );
+}
+
+function verdictOf(m: Message, method: string): AuthResult | undefined {
+  return m.auth.find((x) => x.method === method && x.most_recent) ?? m.auth.find((x) => x.method === method && !x.header_name.startsWith("ARC"));
+}
+
+function analysisSection(m: Message, a: ReadingActions): HTMLElement {
+  const count = (s: Severity) => m.findings.filter((f) => f.severity === s).length;
+  const major = m.findings.filter((f) => f.severity === "high" || f.severity === "medium");
+  const minor = m.findings.filter((f) => f.severity === "low" || f.severity === "info");
+  const sec = h("section", { class: "analysis", "aria-label": "Analyse du message" });
+  sec.append(
+    h(
+      "div",
+      { class: "analysis-head" },
+      h("h2", {}, "Analyse"),
+      ...(["high", "medium", "low", "info"] as Severity[])
+        .filter((s) => count(s) > 0)
+        .map((s) => h("span", { class: `sev sev-${s}` }, `${count(s)} ${SEV_LABEL[s].toLowerCase()}`)),
+      m.findings.length ? null : h("span", { class: "muted-label" }, "aucun constat"),
+    ),
+  );
+  if (m.auth.length || m.dkim.length) {
+    const row = h("div", { class: "auth-row" }, authChip("SPF", verdictOf(m, "spf")), authChip("DKIM", verdictOf(m, "dkim")), authChip("DMARC", verdictOf(m, "dmarc")));
+    for (const d of m.dkim) {
+      const state = d.body_hash_ok === true ? "corps intact depuis la signature" : d.body_hash_ok === false ? "corps modifié depuis la signature" : "corps non vérifiable";
+      row.append(
+        h(
+          "span",
+          { class: `dkim-state ${d.body_hash_ok === false ? "bad" : d.body_hash_ok ? "good" : ""}`, title: d.note ?? `Empreinte recalculée hors-ligne : ${d.body_hash_computed ?? "—"}` },
+          `DKIM ${d.domain ?? "?"} : ${state}`,
+        ),
+      );
+    }
+    sec.append(row);
+  } else if (m.hops.length) {
+    sec.append(h("p", { class: "muted-label" }, "Aucun résultat SPF / DKIM / DMARC dans les en-têtes."));
+  }
+  if (major.length) sec.append(h("ol", { class: "findings" }, ...major.map((f) => findingItem(f, a))));
+  if (minor.length) {
+    const d = h("details", { class: "minor", open: minorOpen || !major.length }) as HTMLDetailsElement;
+    d.addEventListener("toggle", () => (minorOpen = d.open));
+    d.append(h("summary", {}, `${minor.length} constat${minor.length > 1 ? "s" : ""} mineur${minor.length > 1 ? "s" : ""}`), h("ol", { class: "findings" }, ...minor.map((f) => findingItem(f, a))));
+    sec.append(d);
+  }
+  return sec;
+}
+
+function iocSection(iocs: Ioc[], a: ReadingActions): HTMLElement {
+  const sec = h(
+    "section",
+    { class: "iocs" },
+    h("h2", {}, "Indicateurs", h("span", { class: "count" }, String(iocs.length))),
+  );
+  if (!iocs.length) {
+    sec.append(h("p", { class: "none" }, "Aucun indicateur"));
+    return sec;
+  }
+  sec.append(
+    h(
+      "div",
+      { class: "file-actions" },
+      h("button", { class: "btn btn-small ioc-csv", type: "button", onclick: () => a.onExportIocs("csv") }, "Exporter CSV"),
+      h("button", { class: "btn btn-small ioc-json", type: "button", onclick: () => a.onExportIocs("json") }, "JSON"),
+      h("button", { class: "btn btn-small", type: "button", onclick: () => copy(iocs.map((i) => i.defanged).join("\n"), "Liste défangée") }, "Copier (défangés)"),
+    ),
+  );
+  const kinds = [...new Set(iocs.map((i) => i.kind))];
+  for (const k of kinds) {
+    const items = iocs.filter((i) => i.kind === k);
+    sec.append(
+      h(
+        "details",
+        { class: "ioc-group", open: k !== "sha256" && k !== "md5" && items.length <= 8 },
+        h("summary", {}, `${IOC_LABEL[k]} (${items.length})`),
+        h("ul", {}, ...items.map((i) => h("li", { title: i.locations.join("\n") }, h("code", {}, i.defanged), h("span", { class: "ioc-loc" }, i.locations[0] ?? "")))),
+      ),
+    );
+  }
   return sec;
 }

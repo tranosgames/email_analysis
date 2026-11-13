@@ -477,3 +477,98 @@ fn msg_html_from_rtf() {
     let e = mf_engine::open(&corpus("eml/html-links-inline.eml")).expect("ouverture");
     assert_eq!(e.message.html_source.as_deref(), Some("html"));
 }
+
+/// T118–T122 : authentification, constats, pièces jointes, liens et indicateurs.
+#[test]
+fn phishing_analysis() {
+    let a = mf_engine::open(&corpus("eml/phishing-auth.eml")).expect("ouverture");
+    let m = &a.message;
+    let rules: Vec<&str> = m.findings.iter().map(|f| f.rule.as_str()).collect();
+    for expected in [
+        "auth_dmarc_fail",
+        "auth_spf_softfail",
+        "sender_lookalike_domain",
+        "url_lookalike_domain",
+        "url_mixed_script",
+        "url_credentials",
+        "reply_to_domain_mismatch",
+        "display_name_brand",
+        "link_text_target_mismatch",
+        "url_raw_ip",
+        "url_punycode",
+        "attachment_html",
+        "attachment_encrypted_archive",
+        "dkim_not_aligned",
+    ] {
+        assert!(rules.contains(&expected), "{expected} absent de {rules:?}");
+    }
+    assert!(
+        !rules.contains(&"auth_dkim_pass"),
+        "un succès n'est pas un constat"
+    );
+    assert!(
+        m.findings
+            .windows(2)
+            .all(|w| w[0].severity >= w[1].severity),
+        "tri par gravité"
+    );
+    assert_eq!(
+        m.dkim[0].body_hash_ok,
+        Some(true),
+        "bh calculé indépendamment (Python)"
+    );
+    assert_eq!(
+        m.dkim[0].body_hash_computed.as_deref(),
+        Some("Nd4qi7DgVA02QkCCKpOhYICttDoyJ1S/BW2uTbQN6pE=")
+    );
+    let iocs: Vec<(&mf_core::IocKind, &str)> =
+        m.iocs.iter().map(|i| (&i.kind, i.value.as_str())).collect();
+    assert!(iocs.contains(&(&mf_core::IocKind::Ipv4, "203.0.113.50")));
+    assert!(iocs.contains(&(&mf_core::IocKind::Email, "helpdesk@proton-mail.example")));
+    assert!(
+        !iocs.iter().any(|(_, v)| v.contains("victim@")),
+        "le destinataire n'est pas un indicateur"
+    );
+    assert!(
+        !iocs
+            .iter()
+            .any(|(_, v)| *v == "https://login.microsoftonline.com/"),
+        "leurre affiché exclu"
+    );
+    assert!(
+        m.iocs
+            .iter()
+            .all(|i| !i.defanged.contains("://") || i.defanged.contains("[://]"))
+    );
+
+    // Altération d'un octet du corps : le constat DKIM apparaît.
+    let raw = std::fs::read(corpus("eml/phishing-auth.eml")).expect("lecture");
+    let tampered =
+        String::from_utf8_lossy(&raw).replace("a atteint sa limite", "a atteint sa limitE");
+    let t = mf_engine::open_bytes("x.eml", tampered.into_bytes()).expect("ouverture");
+    assert_eq!(t.message.dkim[0].body_hash_ok, Some(false));
+    assert!(
+        t.message
+            .findings
+            .iter()
+            .any(|f| f.rule == "dkim_body_hash_mismatch")
+    );
+
+    // Pièce jointe exécutable déguisée (corpus existant).
+    let p = mf_engine::open(&corpus("eml/phishing-basic.eml")).expect("ouverture");
+    let pj = &p.message.attachments[0];
+    assert_eq!(pj.detected_type.as_deref(), Some("Exécutable Windows (PE)"));
+    assert!(
+        p.message
+            .findings
+            .iter()
+            .any(|f| f.rule == "attachment_double_extension")
+    );
+    assert!(
+        p.message
+            .findings
+            .iter()
+            .any(|f| f.rule == "sender_lookalike_domain"),
+        "micros0ft-help.example"
+    );
+}

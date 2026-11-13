@@ -56,6 +56,10 @@ impl Collector {
             host: host(url),
             locations: vec![loc],
             occurrences: 1,
+            display_texts: Vec::new(),
+            unicode_host: None,
+            lookalike_of: None,
+            flags: Vec::new(),
         });
     }
 
@@ -175,7 +179,7 @@ pub fn defang(url: &str) -> String {
     }
 }
 
-fn decode_entities(s: &str) -> String {
+pub(crate) fn decode_entities(s: &str) -> String {
     if !s.contains('&') {
         return s.to_string();
     }

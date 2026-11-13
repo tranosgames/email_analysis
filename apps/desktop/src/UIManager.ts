@@ -1,7 +1,18 @@
 // Rendu de la liste latérale et du panneau de lecture (rôle de UIManager.js dans msg-reader).
 
 import { formatDate, h, humanSize, toast } from "./dom";
-import { confirmBox, getMessage, saveAttachment, type Attachment, type Message, type MessageView } from "./ipc";
+import {
+  buildReport,
+  confirmBox,
+  exportIocs,
+  getMessage,
+  saveAttachment,
+  saveText,
+  type Attachment,
+  type IocGroup,
+  type Message,
+  type MessageView,
+} from "./ipc";
 import type { MessageHandler } from "./MessageHandler";
 import { renderReading, type Crumb } from "./views/reading";
 
@@ -124,10 +135,68 @@ export class UIManager {
         onToggleHeaders: () => s.toggleHeaders(),
         onOpenEmbedded: (i) => s.openEmbedded(i),
         onDownload: (att) => void this.download(root.evidence.path, s.selectedId, [...s.path], att),
+        onReport: (format) => void this.report(root, s.selectedId, [...s.path], format),
+        onExportIocs: (format) => void this.exportIocs([{ source: this.source(root, s.path), iocs: message.iocs }], format, root),
         onGoToDepth: (d) => s.goToDepth(d),
       }),
     );
     this.reading.scrollTop = scroll;
+  }
+
+  private source(root: MessageView, path: number[]): string {
+    const file = root.evidence.path.split(/[\\/]/).pop() ?? root.evidence.path;
+    return path.length ? `${file} › PJ ${path.join(" › PJ ")}` : file;
+  }
+
+  private base(root: MessageView): string {
+    const file = root.evidence.path.split(/[\\/]/).pop() ?? "message";
+    return file.replace(/\.[^.]+$/, "").replace(/[^\p{L}\p{N}_-]+/gu, "_").slice(0, 60) || "message";
+  }
+
+  /** FR-044 : rapport d'analyse du message affiché, téléchargé ou enregistré. */
+  private async report(root: MessageView, id: number | null, path: number[], format: "html" | "json"): Promise<void> {
+    if (id === null) return;
+    try {
+      const text = await buildReport(id, path, format);
+      const name = `rapport_${this.base(root)}${path.length ? `_pj${path.join("-")}` : ""}.${format}`;
+      const saved = await saveText(text, name, format === "html" ? "text/html" : "application/json");
+      if (saved) toast(`Rapport enregistré : ${saved}`);
+    } catch (e) {
+      toast(`Rapport impossible : ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  private async exportIocs(groups: IocGroup[], format: "csv" | "json", root: MessageView | null): Promise<void> {
+    try {
+      const text = await exportIocs(groups, format, false);
+      const name = `indicateurs_${root ? this.base(root) : "tous"}.${format}`;
+      const saved = await saveText(text, name, format === "csv" ? "text/csv" : "application/json");
+      if (saved) toast(`Indicateurs enregistrés : ${saved}`);
+    } catch (e) {
+      toast(`Export impossible : ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  /** FR-044 : indicateurs de tous les messages chargés (messages joints compris), fusionnés. */
+  async exportAllIocs(format: "csv" | "json"): Promise<void> {
+    const groups: IocGroup[] = [];
+    const walk = (root: MessageView, m: Message, path: number[]) => {
+      if (m.iocs.length) groups.push({ source: this.source(root, path), iocs: m.iocs });
+      for (const a of m.attachments) if (a.embedded) walk(root, a.embedded, [...path, a.index]);
+    };
+    for (const item of this.state.items) {
+      let view = this.cache.get(item.id);
+      if (!view) {
+        view = await getMessage(item.id, []);
+        this.cache.set(item.id, view);
+      }
+      walk(view, view.message, []);
+    }
+    if (!groups.length) {
+      toast("Aucun indicateur dans les messages chargés");
+      return;
+    }
+    await this.exportIocs(groups, format, null);
   }
 
   /** FR-038 : boîte de confirmation, puis enregistrement de la pièce jointe. */

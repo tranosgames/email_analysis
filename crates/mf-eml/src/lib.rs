@@ -25,6 +25,17 @@ pub fn parse_header_block(text: &str) -> Vec<Header> {
         .unwrap_or_default()
 }
 
+/// Corps brut (après la ligne vide qui suit les en-têtes), pour la vérification DKIM.
+fn body_of(raw: &[u8]) -> Option<&[u8]> {
+    let crlf = raw.windows(4).position(|w| w == b"\r\n\r\n").map(|i| i + 4);
+    let lf = raw.windows(2).position(|w| w == b"\n\n").map(|i| i + 2);
+    let start = match (crlf, lf) {
+        (Some(a), Some(b)) => a.min(b),
+        (a, b) => a.or(b)?,
+    };
+    raw.get(start..)
+}
+
 fn unfold(s: &str) -> String {
     s.split(['\r', '\n'])
         .map(str::trim)
@@ -105,6 +116,7 @@ fn convert(msg: &mail_parser::Message<'_>, raw: &[u8], depth: usize) -> Message 
     if out.body_html.is_some() {
         out.html_source = Some("html".into());
     }
+    out.raw_body = body_of(raw).map(<[u8]>::to_vec);
     if out.date_raw.is_some() && out.date_utc.is_none() {
         out.issues.push("en-tête Date non interprétable".into());
     }
@@ -162,6 +174,9 @@ fn convert(msg: &mail_parser::Message<'_>, raw: &[u8], depth: usize) -> Message 
                 .map(|c| c.trim_matches(['<', '>']).to_string()),
             embedded,
             extractable: true,
+            detected_type: None,
+            detected_mime: None,
+            flags: Vec::new(),
             data,
         });
     }

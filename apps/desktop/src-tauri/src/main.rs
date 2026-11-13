@@ -170,6 +170,80 @@ fn save_attachment(
     Ok(x.sha256)
 }
 
+/// FR-044 : rapport d'analyse (HTML ou JSON) du message désigné.
+#[tauri::command]
+fn build_report(
+    id: usize,
+    path: Vec<u32>,
+    format: String,
+    generated: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    let loaded = state.loaded.lock().unwrap_or_else(|e| e.into_inner());
+    let a = loaded.get(id).ok_or("preuve inconnue")?;
+    let m = mf_engine::descend(&a.message, &path).ok_or("message embarqué introuvable")?;
+    let provenance = path
+        .iter()
+        .map(|i| format!("PJ {i}"))
+        .collect::<Vec<_>>()
+        .join(" › ");
+    let version = env!("CARGO_PKG_VERSION");
+    match format.as_str() {
+        "html" => Ok(mf_report::report_html(
+            &a.evidence,
+            m,
+            &provenance,
+            &generated,
+            version,
+        )),
+        "json" => Ok(mf_report::report_json(
+            &a.evidence,
+            m,
+            &provenance,
+            &generated,
+            version,
+        )),
+        other => Err(format!("format inconnu : {other}")),
+    }
+}
+
+/// FR-023 : export fusionné des indicateurs (`[{source, iocs}]`).
+#[tauri::command]
+fn export_iocs(
+    groups: Vec<mf_report::IocGroup>,
+    format: String,
+    defang: bool,
+) -> Result<String, String> {
+    match format.as_str() {
+        "csv" => Ok(mf_report::iocs_csv(&groups, defang)),
+        "json" => Ok(mf_report::iocs_json(&groups, defang)),
+        other => Err(format!("format inconnu : {other}")),
+    }
+}
+
+/// Enregistre un export (rapport, indicateurs) à l'emplacement choisi dans le dialogue natif.
+/// Refuse d'écraser une preuve chargée ou d'écrire dans son dossier (Constitution I).
+#[tauri::command]
+fn save_text(
+    dest: String,
+    content: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let dest = PathBuf::from(dest);
+    let dest_dir = dest.parent().and_then(|d| std::fs::canonicalize(d).ok());
+    let loaded = state.loaded.lock().unwrap_or_else(|e| e.into_inner());
+    for a in loaded.iter() {
+        let ev = std::fs::canonicalize(&a.evidence.path).ok();
+        if ev.as_ref().and_then(|p| p.parent().map(PathBuf::from)) == dest_dir && dest_dir.is_some()
+        {
+            return Err(
+                "Destination refusée : choisissez un autre dossier que celui d'une preuve.".into(),
+            );
+        }
+    }
+    std::fs::write(&dest, content).map_err(|e| format!("{}: {e}", dest.display()))
+}
+
 /// Fichiers passés au lancement (association `.eml` / `.msg`, double-clic).
 #[tauri::command]
 fn initial_paths() -> Vec<String> {
@@ -187,7 +261,10 @@ fn main() {
             open_paths,
             get_message,
             initial_paths,
-            save_attachment
+            save_attachment,
+            build_report,
+            export_iocs,
+            save_text
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

@@ -43,6 +43,16 @@ document.addEventListener("keydown", (e) => {
 
 warmUp();
 const footer = document.querySelector<HTMLElement>(".list-footer");
-if (footer) mountThemeToggle(footer);
+if (footer) {
+  // FR-044 : indicateurs de tous les messages chargés, fusionnés et dédoublonnés.
+  const all = document.createElement("button");
+  all.type = "button";
+  all.className = "btn export-all";
+  all.textContent = "Indicateurs (tous)";
+  all.title = "Exporter en CSV les indicateurs de tous les messages chargés";
+  all.addEventListener("click", () => void ui.exportAllIocs("csv"));
+  footer.append(all);
+  mountThemeToggle(footer);
+}
 void ui.render();
 void files.init();

@@ -29,6 +29,9 @@ export interface Attachment {
   embedded: Message | null;
   /** Faux pour un message Outlook embarqué (objet MAPI) : pas de fichier d'origine. */
   extractable: boolean;
+  detected_type: string | null;
+  detected_mime: string | null;
+  flags: string[];
 }
 
 export type UrlLocation =
@@ -44,6 +47,10 @@ export interface UrlEntry {
   host: string | null;
   locations: UrlLocation[];
   occurrences: number;
+  display_texts: string[];
+  unicode_host: string | null;
+  lookalike_of: string | null;
+  flags: string[];
 }
 
 export type BlockedKind = "image" | "background" | "stylesheet" | "script" | "frame" | "media" | "object" | "other";
@@ -57,6 +64,55 @@ export interface BlockedResource {
   attribute: string;
   line: number | null;
   marker: number | null;
+}
+
+export type Severity = "high" | "medium" | "low" | "info";
+
+export type SourceRef =
+  | { kind: "header"; index: number; name: string }
+  | { kind: "attachment"; index: number; filename: string }
+  | { kind: "url"; url: string }
+  | { kind: "hop"; index: number };
+
+export interface Finding {
+  rule: string;
+  severity: Severity;
+  title: string;
+  detail: string;
+  refs: SourceRef[];
+}
+
+export interface AuthResult {
+  method: string;
+  result: string;
+  authserv_id: string | null;
+  properties: [string, string][];
+  header_name: string;
+  header_index: number;
+  most_recent: boolean;
+}
+
+export interface DkimCheck {
+  header_index: number;
+  domain: string | null;
+  selector: string | null;
+  algorithm: string | null;
+  canonicalization: string | null;
+  signed_headers: string[];
+  body_length_limit: number | null;
+  body_hash_declared: string | null;
+  body_hash_computed: string | null;
+  body_hash_ok: boolean | null;
+  note: string | null;
+}
+
+export type IocKind = "ipv4" | "ipv6" | "domain" | "url" | "email" | "sha256" | "md5";
+
+export interface Ioc {
+  kind: IocKind;
+  value: string;
+  defanged: string;
+  locations: string[];
 }
 
 export type IpScope = "public" | "private" | "loopback" | "link_local" | "shared" | "documentation";
@@ -120,6 +176,10 @@ export interface Message {
   blocked_resources: BlockedResource[];
   hops: Hop[];
   route: MailRoute | null;
+  auth: AuthResult[];
+  dkim: DkimCheck[];
+  findings: Finding[];
+  iocs: Ioc[];
   /** « html » : corps HTML d'origine ; « rtf » : HTML reconstitué depuis le RTF Outlook (FR-041). */
   html_source: "html" | "rtf" | null;
   attachments: Attachment[];
@@ -185,6 +245,7 @@ let worker: Worker | null = null;
 let nextJob = 0;
 interface WorkerReply {
   ok: boolean;
+  text?: string;
   view?: MessageView;
   key?: number;
   data?: ArrayBuffer;
@@ -293,6 +354,54 @@ export async function getMessage(id: number, path: number[]): Promise<MessageVie
 
 export async function initialPaths(): Promise<string[]> {
   return inTauri ? invoke<string[]>("initial_paths") : [];
+}
+
+// ——— Rapport et indicateurs (FR-026, FR-044) ———
+
+/** Horodatage UTC « AAAA-MM-JJ HH:MM:SS » (le moteur WebAssembly n'a pas d'horloge). */
+function nowUtc(): string {
+  return new Date().toISOString().replace("T", " ").slice(0, 19);
+}
+
+/** Rapport d'analyse du message `path` de la preuve `id`. */
+export async function buildReport(id: number, path: number[], format: "html" | "json"): Promise<string> {
+  if (inTauri) return invoke<string>("build_report", { id, path, format, generated: nowUtc() });
+  const r = await ask({ kind: "report", key: webKeys[id], path, format, generated: nowUtc() });
+  if (!r.ok || r.text === undefined) throw new Error(r.error ?? "rapport impossible");
+  return r.text;
+}
+
+export interface IocGroup {
+  source: string;
+  iocs: Ioc[];
+}
+
+/** Indicateurs fusionnés et dédoublonnés, en CSV ou JSON. */
+export async function exportIocs(groups: IocGroup[], format: "csv" | "json", defang: boolean): Promise<string> {
+  if (inTauri) return invoke<string>("export_iocs", { groups, format, defang });
+  const r = await ask({ kind: "iocs", json: JSON.stringify(groups), format, defang });
+  if (!r.ok || r.text === undefined) throw new Error(r.error ?? "export impossible");
+  return r.text;
+}
+
+/** Bureau : dialogue d'enregistrement natif ; web : téléchargement (aucune requête réseau). */
+export async function saveText(content: string, filename: string, mime: string): Promise<string | null> {
+  if (inTauri) {
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    const dest = await save({ defaultPath: filename, title: "Enregistrer" });
+    if (!dest) return null;
+    await invoke("save_text", { dest, content });
+    return dest;
+  }
+  const url = URL.createObjectURL(new Blob([content], { type: `${mime};charset=utf-8` }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  return filename;
 }
 
 /** Boîte de confirmation système : `ask` natif (bureau) ou `window.confirm` (web). */

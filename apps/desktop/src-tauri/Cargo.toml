@@ -16,3 +16,4 @@ serde.workspace = true
 serde_json.workspace = true
 mf-core.workspace = true
 mf-engine.workspace = true
+mf-report.workspace = true

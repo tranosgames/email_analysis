@@ -22,6 +22,31 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Constats automatiques (authentification, expéditeur, liens, pièces jointes).
+    Findings { files: Vec<PathBuf> },
+    /// Indicateurs de compromission de plusieurs messages, fusionnés (CSV ou JSON).
+    Iocs {
+        files: Vec<PathBuf>,
+        /// csv ou json
+        #[arg(long, default_value = "csv")]
+        format: String,
+        /// Valeurs non cliquables (hxxp[://]exemple[.]com).
+        #[arg(long)]
+        defang: bool,
+    },
+    /// Rapport d'analyse d'un message (HTML imprimable ou JSON).
+    Report {
+        file: PathBuf,
+        /// Message embarqué, ex. « 2/1 ».
+        #[arg(long)]
+        path: Option<String>,
+        /// html ou json
+        #[arg(long, default_value = "html")]
+        format: String,
+        /// Fichier à créer (ne doit pas exister, ni être dans le dossier de la preuve).
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// SHA-256, MD5 et format détecté.
     Hash { files: Vec<PathBuf> },
     /// Résumé du message : en-tête lisible, fichiers contenus, URL (et en-têtes avec --headers).
@@ -217,6 +242,61 @@ fn print_route(m: &Message) {
     }
 }
 
+fn now_utc() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    chrono::DateTime::from_timestamp(i64::try_from(secs).unwrap_or(0), 0)
+        .map_or_else(String::new, |t| t.format("%Y-%m-%d %H:%M:%S").to_string())
+}
+
+/// FR-013/014 : verdicts d'authentification (serveur de réception final) et DKIM.
+fn print_auth(m: &Message) {
+    if m.auth.is_empty() && m.dkim.is_empty() {
+        return;
+    }
+    let v = |method: &str| {
+        m.auth
+            .iter()
+            .filter(|a| a.method == method)
+            .find(|a| a.most_recent)
+            .or_else(|| m.auth.iter().find(|a| a.method == method))
+            .map_or("—".to_string(), |a| a.result.clone())
+    };
+    println!(
+        "Authentification  SPF {}  DKIM {}  DMARC {}",
+        v("spf"),
+        v("dkim"),
+        v("dmarc")
+    );
+    for d in &m.dkim {
+        let state = match d.body_hash_ok {
+            Some(true) => "corps intact",
+            Some(false) => "CORPS MODIFIÉ",
+            None => "non vérifiable",
+        };
+        println!(
+            "  DKIM d={} s={} : {state}",
+            d.domain.as_deref().unwrap_or("?"),
+            d.selector.as_deref().unwrap_or("?")
+        );
+    }
+}
+
+/// FR-015 : constats, du plus grave au moins grave.
+fn print_findings(m: &Message) {
+    println!("Constats ({})", m.findings.len());
+    for f in &m.findings {
+        let sev = match f.severity {
+            mf_core::Severity::High => "ÉLEVÉ ",
+            mf_core::Severity::Medium => "MOYEN ",
+            mf_core::Severity::Low => "faible",
+            mf_core::Severity::Info => "info  ",
+        };
+        println!("  {sev} {}\n         {}", f.title, f.detail);
+    }
+}
+
 fn kind_label(k: mf_core::BlockedKind) -> &'static str {
     use mf_core::BlockedKind::*;
     match k {
@@ -361,6 +441,8 @@ fn run(cli: Cli) -> Result<(), String> {
             }
             println!("Fichiers contenus ({})", m.attachments.len());
             print_attachments(m, 1);
+            print_auth(m);
+            print_findings(m);
             print_route(m);
             print_urls(m, false);
             print_blocked(m);
@@ -416,6 +498,86 @@ fn run(cli: Cli) -> Result<(), String> {
                 human(x.data.len() as u64),
                 x.sha256
             );
+        }
+        Cmd::Findings { files } => {
+            let mut all = Vec::new();
+            for f in files {
+                let a = mf_engine::open(&f).map_err(|e| format!("{}: {e}", f.display()))?;
+                if !cli.json {
+                    println!("== {}", f.display());
+                    print_auth(&a.message);
+                    print_findings(&a.message);
+                }
+                all.push(serde_json::json!({ "file": f.display().to_string(), "findings": a.message.findings }));
+            }
+            if cli.json {
+                return out(&all);
+            }
+        }
+        Cmd::Iocs {
+            files,
+            format,
+            defang,
+        } => {
+            let mut groups = Vec::new();
+            for f in files {
+                let a = mf_engine::open(&f).map_err(|e| format!("{}: {e}", f.display()))?;
+                groups.push(mf_report::IocGroup {
+                    source: f.display().to_string(),
+                    iocs: a.message.iocs,
+                });
+            }
+            match format.as_str() {
+                "csv" => print!("{}", mf_report::iocs_csv(&groups, defang)),
+                "json" => println!("{}", mf_report::iocs_json(&groups, defang)),
+                other => return Err(format!("--format {other} : csv ou json attendu")),
+            }
+        }
+        Cmd::Report {
+            file,
+            path,
+            format,
+            out: dest,
+        } => {
+            let evidence_dir = std::fs::canonicalize(&file)
+                .ok()
+                .and_then(|p| p.parent().map(PathBuf::from));
+            let dest_dir = dest
+                .parent()
+                .map(|d| {
+                    if d.as_os_str().is_empty() {
+                        std::path::Path::new(".")
+                    } else {
+                        d
+                    }
+                })
+                .and_then(|d| std::fs::canonicalize(d).ok());
+            if evidence_dir.is_some() && dest_dir == evidence_dir {
+                return Err(
+                    "destination refusée : ne pas écrire dans le dossier de la preuve".into(),
+                );
+            }
+            if dest.exists() {
+                return Err(format!("{} existe déjà", dest.display()));
+            }
+            let a = mf_engine::open(&file).map_err(|e| e.to_string())?;
+            let p = parse_path(&path)?;
+            let m = mf_engine::descend(&a.message, &p)
+                .ok_or("--path : message embarqué introuvable")?;
+            let provenance = p
+                .iter()
+                .map(|i| format!("PJ {i}"))
+                .collect::<Vec<_>>()
+                .join(" › ");
+            let now = now_utc();
+            let version = env!("CARGO_PKG_VERSION");
+            let content = match format.as_str() {
+                "html" => mf_report::report_html(&a.evidence, m, &provenance, &now, version),
+                "json" => mf_report::report_json(&a.evidence, m, &provenance, &now, version),
+                other => return Err(format!("--format {other} : html ou json attendu")),
+            };
+            std::fs::write(&dest, content).map_err(|e| format!("{}: {e}", dest.display()))?;
+            println!("{} ({} constat(s))", dest.display(), m.findings.len());
         }
         Cmd::Urls { file, path, defang } => {
             let a = mf_engine::open(&file).map_err(|e| e.to_string())?;

@@ -1,9 +1,16 @@
-//! Analyse d'un message normalisé : HTML sûr et liste d'URL (constats, IOC… à venir).
+//! Analyse d'un message normalisé : HTML sûr, URL et liens trompeurs, acheminement,
+//! authentification, pièces jointes, constats et indicateurs.
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::panic)]
 
+pub mod attachments;
+pub mod auth;
+pub mod dkim;
+pub mod findings;
 pub mod hops;
 pub mod html;
+pub mod iocs;
+pub mod links;
 pub mod urls;
 
 use mf_core::{Disposition, Message};
@@ -31,12 +38,18 @@ pub fn analyze(msg: &mut Message) {
         msg.blocked_resources = safe.blocked;
     }
     msg.urls = urls::extract(msg);
+    links::analyze(msg);
     let chain = hops::hops(msg);
     msg.route = Some(hops::route(msg, &chain));
     msg.hops = chain;
+    msg.auth = auth::results(&msg.headers);
+    msg.dkim = dkim::checks(&msg.headers, msg.raw_body.as_deref());
     for a in &mut msg.attachments {
+        attachments::inspect(a);
         if let Some(inner) = a.embedded.as_deref_mut() {
             analyze(inner);
         }
     }
+    msg.findings = findings::evaluate(msg);
+    msg.iocs = iocs::extract(msg);
 }

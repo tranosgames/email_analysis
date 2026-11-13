@@ -138,6 +138,23 @@ Workspace Cargo : `crates/mf-*/src/`, app : `apps/desktop/`, tests transverses :
 - [x] T116 [US1] Interface : bouton Thème (Auto/Clair/Sombre), onglet HTML avec provenance, panneau « Acheminement » au-dessus des fichiers contenus
 - [x] T117 E2E web : thème, panneau IP/DNS, rendu HTML d'un MSG
 
+### Ajouts clarification 2026-11-13 (2) — analyses « sans serveur » (points 1 à 6)
+
+> Réalise, sur le moteur commun, les tâches de US2 (T039–T042, T044–T047, T049 ; T050 partiel), US3 (T053, T057),
+> US4 (T061, T062, T064–T068) et la partie rapport de US5 (T073, T074) — tests et modules regroupés dans
+> `crates/mf-analysis/src/*.rs` et `crates/mf-report/src/lib.rs` plutôt que dans les fichiers prévus.
+> Restent ouverts : en-têtes MSG 0x007D (T043, T048), test de défangage aller-retour (T063), conformité au schéma
+> JSON (T069), déterminisme (T070), journal d'audit, notes, dossier d'enquête (T071, T072, T075, T076).
+
+- [x] T118 [P] [US2] `crates/mf-analysis/src/auth.rs` : Authentication-Results, ARC-Authentication-Results, Received-SPF (RFC 8601, 7208) + tests
+- [x] T119 [P] [US2] `crates/mf-analysis/src/dkim.rs` : balises DKIM-Signature, canonicalisation simple/relaxed, `l=`, `bh` recalculé (vecteurs RFC 6376) + tests
+- [x] T120 [US2] `crates/mf-analysis/src/findings.rs` : règles expéditeur, authentification, chronologie, liens, pièces jointes, domaines sosies (FR-043)
+- [x] T121 [P] [US3] `crates/mf-analysis/src/attachments.rs` : type réel par signature, OOXML/OLE à macros, ZIP chiffré, double extension, extensions à risque, caractères de direction
+- [x] T122 [P] [US4] `crates/mf-analysis/src/links.rs` (texte ≠ cible, IP brute, punycode, écritures mélangées, sosies) et `iocs.rs` (indicateurs dédoublonnés, défangés)
+- [x] T123 [US5] crate `crates/mf-report` : rapport JSON déterministe + HTML autonome imprimable ; CLI `mf findings`, `mf iocs`, `mf report`
+- [x] T124 [US1] WebAssembly : `report`, export des indicateurs ; bureau : `build_report`, `save_text` (dialogue d'enregistrement)
+- [x] T125 [US1] Interface : panneau « Analyse » (authentification + constats), badges sur fichiers et URL, section « Indicateurs », boutons Rapport et Exporter (FR-044) + e2e
+
 **Checkpoint**: User Story 1 fonctionnelle et testable seule — MVP « lecteur forensic sûr ».
 
 ---
@@ -150,20 +167,20 @@ Workspace Cargo : `crates/mf-*/src/`, app : `apps/desktop/`, tests transverses :
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T039 [P] [US2] Test chaîne `Received` (ordre chronologique, IP, délais, régression horaire, en-têtes repliés/mal formés) dans `crates/mf-analysis/tests/hops.rs`
-- [ ] T040 [P] [US2] Test parsing `Authentication-Results` (RFC 8601, exemples de l'annexe B), `Received-SPF`, `ARC-Authentication-Results` dans `crates/mf-analysis/tests/auth.rs`
-- [ ] T041 [P] [US2] Test DKIM : parsing des balises, recalcul `bh=` simple/relaxed avec `l=`, vecteurs RFC 6376 + `dkim-signed.eml` modifié d'un octet (→ mismatch) dans `crates/mf-analysis/tests/dkim.rs`
-- [ ] T042 [P] [US2] Test des règles d'en-tête (`reply_to_domain_mismatch`, `return_path_domain_mismatch`, `sender_from_mismatch`, `display_name_contains_address`, `message_id_foreign_domain`, `date_in_future`, `date_missing`, `msg_no_transport_headers`, `auth_fail_*`) avec `SourceRef` attendues dans `crates/mf-analysis/tests/rules_headers.rs`
+- [x] T039 [P] [US2] Test chaîne `Received` (ordre chronologique, IP, délais, régression horaire, en-têtes repliés/mal formés) dans `crates/mf-analysis/tests/hops.rs`
+- [x] T040 [P] [US2] Test parsing `Authentication-Results` (RFC 8601, exemples de l'annexe B), `Received-SPF`, `ARC-Authentication-Results` dans `crates/mf-analysis/tests/auth.rs`
+- [x] T041 [P] [US2] Test DKIM : parsing des balises, recalcul `bh=` simple/relaxed avec `l=`, vecteurs RFC 6376 + `dkim-signed.eml` modifié d'un octet (→ mismatch) dans `crates/mf-analysis/tests/dkim.rs`
+- [x] T042 [P] [US2] Test des règles d'en-tête (`reply_to_domain_mismatch`, `return_path_domain_mismatch`, `sender_from_mismatch`, `display_name_contains_address`, `message_id_foreign_domain`, `date_in_future`, `date_missing`, `msg_no_transport_headers`, `auth_fail_*`) avec `SourceRef` attendues dans `crates/mf-analysis/tests/rules_headers.rs`
 - [ ] T043 [P] [US2] Test MSG : en-têtes de transport 0x007D parsés en `Header` avec offsets relatifs à la propriété dans `crates/mf-msg/tests/transport_headers.rs`
 
 ### Implementation for User Story 2
 
-- [ ] T044 [P] [US2] Implémenter `hops.rs` (à partir de `HeaderValue::Received` + repli regex) dans `crates/mf-analysis/src/hops.rs`
-- [ ] T045 [P] [US2] Implémenter `auth.rs` (Authentication-Results, Received-SPF, ARC) dans `crates/mf-analysis/src/auth.rs`
-- [ ] T046 [P] [US2] Implémenter `dkim.rs` (parsing via `mail-auth`, canonicalisation et `bh` maison, `signature_verified = NotChecked`) dans `crates/mf-analysis/src/dkim.rs`
-- [ ] T047 [US2] Implémenter le moteur de règles (`Rule` trait, registre, sévérités) et les règles d'en-tête dans `crates/mf-analysis/src/rules/{mod.rs, headers.rs}`
+- [x] T044 [P] [US2] Implémenter `hops.rs` (à partir de `HeaderValue::Received` + repli regex) dans `crates/mf-analysis/src/hops.rs`
+- [x] T045 [P] [US2] Implémenter `auth.rs` (Authentication-Results, Received-SPF, ARC) dans `crates/mf-analysis/src/auth.rs`
+- [x] T046 [P] [US2] Implémenter `dkim.rs` (parsing via `mail-auth`, canonicalisation et `bh` maison, `signature_verified = NotChecked`) dans `crates/mf-analysis/src/dkim.rs`
+- [x] T047 [US2] Implémenter le moteur de règles (`Rule` trait, registre, sévérités) et les règles d'en-tête dans `crates/mf-analysis/src/rules/{mod.rs, headers.rs}`
 - [ ] T048 [US2] Parser 0x007D en en-têtes dans `crates/mf-msg/src/convert.rs` (réutilise `mail-parser` sur le bloc d'en-têtes)
-- [ ] T049 [US2] Implémenter `mf headers` et `mf findings` dans `crates/mf-cli/src/main.rs`
+- [x] T049 [US2] Implémenter `mf headers` et `mf findings` dans `crates/mf-cli/src/main.rs`
 - [ ] T050 [US2] Commandes Tauri `get_headers`, `get_findings` + `views/headers.ts` (tableau des en-têtes bruts, frise des sauts avec délais, cartes SPF/DKIM/DMARC, liste des constats cliquables vers la source)
 
 **Checkpoint**: US1 et US2 fonctionnent indépendamment.
@@ -180,14 +197,14 @@ Workspace Cargo : `crates/mf-*/src/`, app : `apps/desktop/`, tests transverses :
 
 - [ ] T051 [P] [US3] Test PJ MSG (`__attach_version1.0_#*`, 0x3707/0x3704, 0x3705, 0x3712 Content-ID, données 0x3701) dans `crates/mf-msg/tests/attachments.rs`
 - [ ] T052 [P] [US3] Test imbrication récursive EML/MSG/mixte, limite de profondeur, provenance (`PJ 2 › PJ 1`) dans `tests/integration/nested.rs`
-- [ ] T053 [P] [US3] Test des alertes PJ (double extension, extension à risque, MIME ≠ réel, U+202E, ZIP chiffré, macros OLE/OOXML, TNEF, S/MIME, taille nulle) dans `crates/mf-analysis/tests/attachments.rs`
+- [x] T053 [P] [US3] Test des alertes PJ (double extension, extension à risque, MIME ≠ réel, U+202E, ZIP chiffré, macros OLE/OOXML, TNEF, S/MIME, taille nulle) dans `crates/mf-analysis/tests/attachments.rs`
 - [ ] T054 [P] [US3] Test export : neutralisation, assainissement `../` et caractères de contrôle, manifeste, refus si destination = répertoire d'une preuve, revérification d'empreinte préalable dans `crates/mf-report/tests/export.rs`
 
 ### Implementation for User Story 3
 
 - [ ] T055 [P] [US3] Implémenter les PJ MSG + message embarqué (stockage `__substg1.0_3701000D`, en-tête de propriétés 24 o) dans `crates/mf-msg/src/attachments.rs`
 - [ ] T056 [P] [US3] Implémenter `message/rfc822` récursif + limite de profondeur dans `crates/mf-eml/src/convert.rs`
-- [ ] T057 [US3] Implémenter la détection de type réel et les alertes PJ (`infer`, `cfb`, `zip`) dans `crates/mf-analysis/src/attachments.rs`
+- [x] T057 [US3] Implémenter la détection de type réel et les alertes PJ (`infer`, `cfb`, `zip`) dans `crates/mf-analysis/src/attachments.rs`
 - [ ] T058 [US3] Implémenter l'export de PJ + `manifest.json` (contrat cli.md) dans `crates/mf-report/src/export.rs` ; `mf attachments`, `mf extract`
 - [ ] T059 [US3] Commandes Tauri `get_attachments`, `export_attachments` + `views/attachments.ts` (tableau, badges d'alerte, ouverture d'un message embarqué comme onglet avec fil d'Ariane, export via dialogue natif)
 - [ ] T060 [US3] Journaliser ExportAttachments avec empreintes
@@ -204,17 +221,17 @@ Workspace Cargo : `crates/mf-*/src/`, app : `apps/desktop/`, tests transverses :
 
 ### Tests for User Story 4 ⚠️
 
-- [ ] T061 [P] [US4] Test extraction URL/domaines/IPv4/IPv6/courriels depuis en-têtes, texte, HTML (href/src/action), noms de PJ ; dédoublonnage et emplacements dans `crates/mf-analysis/tests/iocs.rs`
-- [ ] T062 [P] [US4] Test règles `link_text_target_mismatch`, `url_raw_ip`, `idn_homograph` (punycode, scripts mixtes, confusables) dans `crates/mf-analysis/tests/rules_links.rs`
+- [x] T061 [P] [US4] Test extraction URL/domaines/IPv4/IPv6/courriels depuis en-têtes, texte, HTML (href/src/action), noms de PJ ; dédoublonnage et emplacements dans `crates/mf-analysis/tests/iocs.rs`
+- [x] T062 [P] [US4] Test règles `link_text_target_mismatch`, `url_raw_ip`, `idn_homograph` (punycode, scripts mixtes, confusables) dans `crates/mf-analysis/tests/rules_links.rs`
 - [ ] T063 [P] [US4] Test défangage/réfangage aller-retour et exports CSV/JSON multi-messages dans `crates/mf-analysis/tests/defang.rs`
 
 ### Implementation for User Story 4
 
-- [ ] T064 [P] [US4] Implémenter `iocs.rs` (`linkify`, parcours DOM html5ever, `std::net`, `idna`) dans `crates/mf-analysis/src/iocs.rs`
-- [ ] T065 [P] [US4] Implémenter `defang.rs` dans `crates/mf-analysis/src/defang.rs`
-- [ ] T066 [US4] Implémenter les règles de liens (`unicode-security`) dans `crates/mf-analysis/src/rules/links.rs`
-- [ ] T067 [US4] Implémenter l'export IOC dans `crates/mf-report/src/export.rs` ; `mf iocs`
-- [ ] T068 [US4] Commandes Tauri `get_iocs`, `export_iocs` + `views/iocs.ts` (groupés par type, copie défangée, sélection multi-messages)
+- [x] T064 [P] [US4] Implémenter `iocs.rs` (`linkify`, parcours DOM html5ever, `std::net`, `idna`) dans `crates/mf-analysis/src/iocs.rs`
+- [x] T065 [P] [US4] Implémenter `defang.rs` dans `crates/mf-analysis/src/defang.rs`
+- [x] T066 [US4] Implémenter les règles de liens (`unicode-security`) dans `crates/mf-analysis/src/rules/links.rs`
+- [x] T067 [US4] Implémenter l'export IOC dans `crates/mf-report/src/export.rs` ; `mf iocs`
+- [x] T068 [US4] Commandes Tauri `get_iocs`, `export_iocs` + `views/iocs.ts` (groupés par type, copie défangée, sélection multi-messages)
 
 **Checkpoint**: US1–US4 fonctionnent indépendamment.
 
@@ -235,8 +252,8 @@ Workspace Cargo : `crates/mf-*/src/`, app : `apps/desktop/`, tests transverses :
 ### Implementation for User Story 5
 
 - [ ] T072 [P] [US5] Implémenter `Case` + annotations (notes, étiquettes, épingles) dans `crates/mf-core/src/case.rs`
-- [ ] T073 [US5] Implémenter le rapport JSON trié (schéma v1) dans `crates/mf-report/src/json.rs`
-- [ ] T074 [US5] Implémenter le rapport HTML imprimable (gabarit `askama`, CSS d'impression, sans ressource externe) dans `crates/mf-report/src/html.rs` et `templates/report.html`
+- [x] T073 [US5] Implémenter le rapport JSON trié (schéma v1) dans `crates/mf-report/src/json.rs`
+- [x] T074 [US5] Implémenter le rapport HTML imprimable (gabarit `askama`, CSS d'impression, sans ressource externe) dans `crates/mf-report/src/html.rs` et `templates/report.html`
 - [ ] T075 [US5] Revérification d'empreinte avant chaque export (PJ, IOC, rapport) — point d'entrée unique dans `crates/mf-report/src/lib.rs` ; `mf report`
 - [ ] T076 [US5] Commandes Tauri `add_note`, `add_tag`, `remove_tag`, `get_audit_log`, `export_report`, `save_case`, `open_case` + `views/notes.ts` et vue journal d'audit
 
@@ -372,6 +389,7 @@ Task: "T031 Sanitisation HTML dans crates/mf-analysis/src/html.rs"
 | FR-037 | T091, T092, T097 | | FR-038 | T098–T104 |
 | FR-039 | T105–T110 | | FR-040 | T116, T117 |
 | FR-041 | T113, T114, T116 | | FR-042 | T111, T112, T115, T116 |
+| FR-043 | T120, T122, T125 | | FR-044 | T123–T125 |
 
 ---
 

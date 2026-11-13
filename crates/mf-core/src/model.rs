@@ -69,6 +69,11 @@ pub struct Attachment {
     pub embedded: Option<Box<Message>>,
     /// Faux pour un message Outlook embarqué en objet MAPI : il n'a pas de fichier d'origine (FR-038).
     pub extractable: bool,
+    /// Type réel d'après le contenu (signature), ex. « Exécutable Windows (PE) » (FR-017).
+    pub detected_type: Option<String>,
+    pub detected_mime: Option<String>,
+    /// Alertes sur ce fichier (FR-017).
+    pub flags: Vec<AttachmentFlag>,
     /// Contenu décodé ; jamais sérialisé (export à la demande uniquement).
     #[serde(skip)]
     pub data: Vec<u8>,
@@ -105,6 +110,136 @@ pub struct UrlEntry {
     pub host: Option<String>,
     pub locations: Vec<UrlLocation>,
     pub occurrences: u32,
+    /// Textes affichés des liens `<a>` qui pointent vers cette URL (FR-022).
+    pub display_texts: Vec<String>,
+    /// Hôte décodé quand il est en punycode (`xn--`).
+    pub unicode_host: Option<String>,
+    /// Marque imitée, si le domaine en est un sosie (FR-043).
+    pub lookalike_of: Option<String>,
+    pub flags: Vec<UrlFlag>,
+}
+
+/// Alerte sur une URL (FR-022, FR-043).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UrlFlag {
+    /// Le texte du lien est une autre adresse que la cible.
+    TextTargetMismatch,
+    /// Cible = adresse IP littérale.
+    RawIp,
+    /// Domaine encodé en punycode (IDN).
+    Punycode,
+    /// Domaine mêlant plusieurs écritures (latin + cyrillique…).
+    MixedScript,
+    /// Domaine qui imite une marque connue.
+    Lookalike,
+    /// Identifiants dans l'URL (`user@host`), procédé de masquage de la vraie cible.
+    Credentials,
+}
+
+/// Alerte sur une pièce jointe (FR-017).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AttachmentFlag {
+    Executable,
+    RiskyExtension,
+    DoubleExtension,
+    /// Extension ou type déclaré incohérent avec le contenu réel.
+    TypeMismatch,
+    BidiOrControlChars,
+    EncryptedArchive,
+    Macros,
+    /// Pièce jointe HTML (contrebande HTML, faux formulaire de connexion).
+    HtmlAttachment,
+    Tnef,
+    ZeroLength,
+}
+
+/// Résultat d'authentification déclaré par un serveur (FR-013).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthResult {
+    /// `spf`, `dkim`, `dmarc`, `arc`, `compauth`…
+    pub method: String,
+    /// `pass`, `fail`, `softfail`, `neutral`, `none`, `temperror`, `permerror`…
+    pub result: String,
+    /// Serveur qui a rendu le verdict.
+    pub authserv_id: Option<String>,
+    /// Propriétés (`smtp.mailfrom`, `header.d`, `header.from`…) et motif.
+    pub properties: Vec<(String, String)>,
+    /// En-tête source (`Authentication-Results`, `ARC-Authentication-Results`, `Received-SPF`).
+    pub header_name: String,
+    pub header_index: u32,
+    /// Vrai pour le verdict du serveur de réception final (le plus récent), celui qui fait foi.
+    pub most_recent: bool,
+}
+
+/// Signature DKIM et vérification hors-ligne de l'empreinte du corps (FR-014).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DkimCheck {
+    pub header_index: u32,
+    pub domain: Option<String>,
+    pub selector: Option<String>,
+    pub algorithm: Option<String>,
+    pub canonicalization: Option<String>,
+    pub signed_headers: Vec<String>,
+    pub body_length_limit: Option<u64>,
+    pub body_hash_declared: Option<String>,
+    pub body_hash_computed: Option<String>,
+    /// `Some(true)` : corps intact depuis la signature ; `None` : non vérifiable (voir `note`).
+    pub body_hash_ok: Option<bool>,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Severity {
+    Info,
+    Low,
+    Medium,
+    High,
+}
+
+/// Élément de la preuve sur lequel repose un constat (Constitution II).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SourceRef {
+    Header { index: u32, name: String },
+    Attachment { index: u32, filename: String },
+    Url { url: String },
+    Hop { index: u32 },
+}
+
+/// Constat automatique (FR-015).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Finding {
+    /// Identifiant stable de la règle (data-model.md).
+    pub rule: String,
+    pub severity: Severity,
+    pub title: String,
+    pub detail: String,
+    pub refs: Vec<SourceRef>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IocKind {
+    Ipv4,
+    Ipv6,
+    Domain,
+    Url,
+    Email,
+    Sha256,
+    Md5,
+}
+
+/// Indicateur de compromission (FR-021, FR-023).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Ioc {
+    pub kind: IocKind,
+    pub value: String,
+    pub defanged: String,
+    /// Où il a été trouvé (« From », « Received saut 2 », « PJ 1 facture.pdf.exe »…).
+    pub locations: Vec<String>,
 }
 
 /// Portée d'une adresse IP (pour distinguer l'origine réelle d'un relais interne).
@@ -248,6 +383,17 @@ pub struct Message {
     pub hops: Vec<Hop>,
     /// Résumé IP/DNS d'envoi et de réception (FR-042).
     pub route: Option<MailRoute>,
+    /// Résultats SPF/DKIM/DMARC/ARC déclarés (FR-013).
+    pub auth: Vec<AuthResult>,
+    /// Signatures DKIM et empreinte du corps (FR-014).
+    pub dkim: Vec<DkimCheck>,
+    /// Constats automatiques, du plus grave au moins grave (FR-015).
+    pub findings: Vec<Finding>,
+    /// Indicateurs de compromission dédoublonnés (FR-021).
+    pub iocs: Vec<Ioc>,
+    /// Corps MIME brut tel que transmis (EML), pour la vérification DKIM ; jamais sérialisé.
+    #[serde(skip)]
+    pub raw_body: Option<Vec<u8>>,
     /// Provenance du corps HTML affiché (FR-041) : `html` (d'origine) ou `rtf` (reconstitué).
     pub html_source: Option<String>,
     /// Détail de chaque ressource distante bloquée, dans l'ordre du HTML (FR-039).

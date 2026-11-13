@@ -18,7 +18,7 @@ Le projet est structuré avec [spec-kit](https://github.com/github/spec-kit) (Sp
 | `/speckit-clarify` | ✅ session 2026-10-14 : en-têtes, fichiers, URL (FR-035–037) | — |
 | `/speckit-plan` | ✅ `plan.md`, `research.md`, `data-model.md`, `contracts/`, `quickstart.md` | à faire |
 | `/speckit-tasks` | ✅ `tasks.md` (97 tâches, 9 phases) | à faire |
-| `/speckit-implement` | 🚧 vue de lecture : bouton des en-têtes, fichiers contenus, URL (T091–T097) | — |
+| `/speckit-implement` | 🚧 lecture, en-têtes, fichiers, URL, acheminement, analyse (SPF/DKIM/DMARC, constats, PJ dangereuses, sosies), indicateurs, rapport (T091–T125) | — |
 
 ## Arborescence
 
@@ -61,7 +61,14 @@ Déposez des `.eml` / `.msg` (ou un dossier) dans la fenêtre. Pour chaque messa
 - **Fichiers contenus** liste chaque pièce jointe (nom, type, taille, inline/attaché, SHA-256 et MD5) ; un message joint (`.eml`, `.msg`) s'ouvre avec **Ouvrir le message joint**, qui affiche ses propres en-têtes, fichiers et URL.
 - **Télécharger** (sous chaque fichier) ouvre une boîte de confirmation rappelant nom, type, taille, SHA-256 et le risque ; le fichier enregistré est identique octet pour octet à celui du message, sous un nom assaini. Un message Outlook embarqué en objet MAPI n'a pas de fichier d'origine : il s'ouvre mais ne se télécharge pas.
 - **Ressources distantes bloquées** : le corps HTML est affiché sans rien charger depuis Internet (pixels de suivi, images, feuilles de style, scripts, cadres). Le bandeau « N ressources distantes bloquées » se déplie : pour chacune, son URL, son type, l'élément HTML (`<img src>`, `<td style>`…) et sa ligne dans le code HTML. **Voir dans le rendu** amène au repère numéroté placé à son emplacement, **Voir dans la source** à la ligne de l'onglet **Source HTML**.
-- **URL** liste toutes les URL du message, dédoublonnées, avec leur emplacement (en-tête, texte, HTML `href`/`src`, CSS) ; elles ne sont jamais cliquables et se copient brutes ou défangées.
+- **URL** liste toutes les URL du message, dédoublonnées, avec leur emplacement (en-tête, texte, HTML `href`/`src`, CSS) ; elles ne sont jamais cliquables et se copient brutes ou défangées. Chaque URL porte ses alertes : texte affiché différent de la destination, IP brute, punycode (avec le domaine Unicode réel), alphabets mélangés, domaine sosie d'une marque, `user@hôte`.
+- **Analyse** (au-dessus des en-têtes), entièrement locale :
+  - verdicts **SPF / DKIM / DMARC** lus dans `Authentication-Results` (le plus récent fait foi), `ARC-Authentication-Results` et `Received-SPF` ;
+  - **DKIM** : l'empreinte du corps (`bh=`) est recalculée hors-ligne (canonicalisation simple/relaxed, `l=`) — un corps modifié depuis la signature est signalé. La signature `b=` n'est pas vérifiable sans requête DNS (clé publique) : elle ne l'est pas, par principe. Un `.msg` ne conserve pas le corps MIME d'origine : l'empreinte n'y est pas vérifiable ;
+  - **constats** classés par gravité : expéditeur (domaine sosie, Reply-To / Return-Path d'un autre domaine, nom affiché trompeur, Message-ID étranger), chronologie (date dans le futur, relais qui remontent le temps), liens, pièces jointes. Chaque constat renvoie à l'en-tête, la pièce jointe ou l'URL concernée.
+- **Pièces jointes dangereuses** : type réel reconnu par signature (PE, ELF, LNK, OLE, ZIP/OOXML, ISO, RAR, 7z…) comparé à l'extension et au type déclaré ; exécutables, double extension, caractères de direction Unicode, archives chiffrées, documents à macros, pièces HTML, TNEF.
+- **Indicateurs** (sous les URL) : adresses, domaines, IP publiques, URL et empreintes des pièces jointes, dédoublonnés et défangés ; **Copier (défangés)**, **Exporter CSV / JSON** pour le message, **Indicateurs (tous)** en bas de la liste pour tous les messages chargés.
+- **Rapport** (à droite du bouton des en-têtes) : **HTML (imprimable)** — document autonome, sans aucune ressource externe, à imprimer en PDF depuis le navigateur — ou **JSON** (schéma versionné). Il reprend preuve et empreintes, constats, authentification, acheminement, pièces jointes, URL et indicateurs défangés, et l'annexe des en-têtes.
 
 Autres raccourcis : `↑`/`↓` changer de message, `P` épingler, `Échap` revenir au message parent.
 
@@ -89,6 +96,9 @@ cargo build --release
 ./target/release/mf attachments suspect.msg          # arborescence des messages joints
 ./target/release/mf show suspect.msg --path 3 --json # message joint n°3, en JSON
 ./target/release/mf extract suspect.eml --index 1 --out ./pj   # enregistre la PJ n°1
+./target/release/mf findings *.eml                    # authentification + constats
+./target/release/mf iocs *.eml *.msg --format csv --defang > indicateurs.csv
+./target/release/mf report suspect.eml --out rapport.html      # ou --format json
 ```
 
 **Tests** : `cargo test` (tests unitaires et corpus, concordance avec `msg_parser`, parité fichier / octets) et `npm run test:web`.

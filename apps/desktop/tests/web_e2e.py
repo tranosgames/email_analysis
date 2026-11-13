@@ -97,7 +97,7 @@ def main() -> int:
             ev, msg = expected[name]
             seal = page.locator(".seal").inner_text()
             check(ev["sha256"] in seal and ev["md5"] in seal, f"{name} : SHA-256 et MD5 identiques à la CLI")
-            btn = page.locator(".header-toggle-row button").inner_text()
+            btn = page.locator(".header-toggle-row button").first.inner_text()
             check(f"({len(msg['headers'])})" in btn, f"{name} : {len(msg['headers'])} en-têtes")
             files = page.locator(".inventory section.files")
             names = files.locator(".file-name").all_inner_texts()
@@ -178,6 +178,41 @@ def main() -> int:
         check(page.locator(".inventory .file-name").count() == 2, "message joint : 2 fichiers contenus")
         page.keyboard.press("Escape")
         check(page.locator(".breadcrumb").count() == 0, "Échap revient au message parent")
+
+        # FR-013 à FR-023, FR-043, FR-044 : analyse, rapport et indicateurs, sans réseau.
+        page.locator(".message-item", has_text="boite Microsoft 365").click()
+        page.wait_for_selector("section.analysis")
+        auth = page.locator(".auth-row").inner_text()
+        check("SPF" in auth and "softfail" in auth and "DMARC" in auth and "fail" in auth, f"puces SPF/DKIM/DMARC ({auth!r})")
+        check("corps intact" in page.locator("section.analysis").inner_text(), "DKIM : empreinte du corps recalculée et intacte")
+        fx = page.locator("section.analysis").inner_text()
+        check("imitant « microsoft »" in fx, "constat : expéditeur sosie de microsoft")
+        check("user@hôte" in fx, "constat : lien user@hôte")
+        check(page.locator(".finding .sev-high").count() >= 4, "au moins 4 constats élevés")
+        files_txt = page.locator(".inventory section.files").inner_text()
+        check("chiffr" in files_txt.lower() and "HTML" in files_txt, "badges des pièces jointes (archive chiffrée, HTML)")
+        check("pаypal.example" in page.locator(".inventory").inner_text(), "URL : domaine Unicode réel affiché")
+        page.screenshot(path=str(APP / "test-results" / "web-analyse.png"), full_page=False)
+        for fmt, sel in (("html", ".report-html"), ("json", ".report-json")):
+            with page.expect_download() as dl:
+                page.click(sel)
+            body = pathlib.Path(dl.value.path()).read_text(encoding="utf-8")
+            check(dl.value.suggested_filename.endswith(f".{fmt}"), f"rapport {fmt} : {dl.value.suggested_filename}")
+            if fmt == "html":
+                check("default-src 'none'" in body and "micros0ft-security[.]example" in body, "rapport HTML autonome, indicateurs défangés")
+                (APP / "test-results" / "rapport.html").write_text(body, encoding="utf-8")
+            else:
+                rep = json.loads(body)
+                check(rep["evidence"]["sha256"] == expected["phishing-auth.eml"][0]["sha256"], "rapport JSON : SHA-256 de la preuve")
+                check(rep["findings_summary"]["high"] >= 4, "rapport JSON : synthèse des constats")
+        with page.expect_download() as dl:
+            page.click(".ioc-csv")
+        csv = pathlib.Path(dl.value.path()).read_text(encoding="utf-8-sig")
+        check("198.51.100.77" in csv and "micros0ft-security" in csv, "export CSV des indicateurs")
+        with page.expect_download() as dl:
+            page.click(".export-all")
+        allcsv = pathlib.Path(dl.value.path()).read_text(encoding="utf-8-sig")
+        check(allcsv.count("\n") > csv.count("\n"), "export des indicateurs de tous les messages")
 
         # Hors-ligne : un nouveau dépôt fonctionne toujours (doublon détecté).
         ctx.set_offline(True)
