@@ -178,6 +178,7 @@ button { font: inherit; color: inherit; }
   background: var(--paper);
   box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--seal-ink) 35%, transparent);
 }
+.inventory .seal { margin-bottom: 0; }
 .seal .seal-file { grid-column: 1 / -1; font-weight: 700; font-size: 13px; overflow-wrap: anywhere; }
 .seal dt { font-weight: 700; }
 .seal dd { margin: 0; font-family: var(--mono); overflow-wrap: anywhere; }
@@ -358,6 +359,8 @@ button { font: inherit; color: inherit; }
 .analysis { margin: 0 0 var(--s4); border: 1px solid var(--rule); border-radius: 6px; background: var(--sheet); padding: var(--s3); }
 .analysis-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin-bottom: var(--s2); }
 .analysis-head h2 { font-size: 16px; margin: 0 var(--s2) 0 0; }
+.analysis-head .spacer { flex: 1; }
+.analysis.collapsed .analysis-head { margin-bottom: 0; }
 .auth-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin-bottom: var(--s2); font-size: 13px; }
 .auth-chip { border-radius: 14px; padding: 1px 10px; border: 1px solid var(--rule); }
 .auth-chip strong { font-weight: 700; }

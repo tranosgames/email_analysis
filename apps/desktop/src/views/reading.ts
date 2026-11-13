@@ -28,7 +28,6 @@ export function renderReading(view: MessageView, crumbs: Crumb[], a: ReadingActi
   const m = view.message;
   const main = h("div", { class: "reading-main" });
 
-  main.append(seal(view));
   if (crumbs.length > 1) main.append(breadcrumb(crumbs, a));
 
   main.append(h("h1", { class: "subject-line" }, m.subject?.trim() || "(sans objet)"));
@@ -75,7 +74,7 @@ export function renderReading(view: MessageView, crumbs: Crumb[], a: ReadingActi
 
   main.append(body(view));
 
-  const grid = h("div", { class: "reading-grid" }, main, inventory(m.attachments, m.urls, a, m.blocked_resources, m.route, m.hops, m.iocs));
+  const grid = h("div", { class: "reading-grid" }, main, inventory(seal(view), m.attachments, m.urls, a, m.blocked_resources, m.route, m.hops, m.iocs));
   return grid;
 }
 
@@ -603,10 +602,11 @@ function routeSection(r: MailRoute, hops: Hop[]): HTMLElement {
   return sec;
 }
 
-function inventory(files: Attachment[], urls: UrlEntry[], a: ReadingActions, blocked: BlockedResource[], route: MailRoute | null, hops: Hop[], iocs: Ioc[]): HTMLElement {
+function inventory(evidence: HTMLElement, files: Attachment[], urls: UrlEntry[], a: ReadingActions, blocked: BlockedResource[], route: MailRoute | null, hops: Hop[], iocs: Ioc[]): HTMLElement {
   return h(
     "aside",
     { class: "inventory", "aria-label": "Contenu du message" },
+    evidence,
     route ? routeSection(route, hops) : null,
     filesSection(files, a),
     urlsSection(urls, blocked),
@@ -757,6 +757,13 @@ function urlsSection(urls: UrlEntry[], blocked: BlockedResource[]): HTMLElement 
 
 /** En-tête à mettre en évidence une fois le panneau des en-têtes ouvert. */
 let pendingHeader: number | null = null;
+let analysisOpen = (() => {
+  try {
+    return localStorage.getItem("mf.analysisOpen") !== "0";
+  } catch {
+    return true;
+  }
+})();
 let minorOpen = false;
 
 const SEV_LABEL: Record<Severity, string> = { high: "Élevé", medium: "Moyen", low: "Faible", info: "Info" };
@@ -881,7 +888,25 @@ function analysisSection(m: Message, a: ReadingActions): HTMLElement {
   const count = (s: Severity) => m.findings.filter((f) => f.severity === s).length;
   const major = m.findings.filter((f) => f.severity === "high" || f.severity === "medium");
   const minor = m.findings.filter((f) => f.severity === "low" || f.severity === "info");
-  const sec = h("section", { class: "analysis", "aria-label": "Analyse du message" });
+  const sec = h("section", { class: `analysis${analysisOpen ? "" : " collapsed"}`, "aria-label": "Analyse du message" });
+  const content = h("div", { class: "analysis-body", id: "analysis-body", hidden: !analysisOpen });
+  const toggle = h(
+    "button",
+    { class: "btn btn-small analysis-toggle", type: "button", "aria-expanded": String(analysisOpen), "aria-controls": "analysis-body" },
+    analysisOpen ? "Replier" : "Déplier",
+  );
+  toggle.addEventListener("click", () => {
+    analysisOpen = !analysisOpen;
+    try {
+      localStorage.setItem("mf.analysisOpen", analysisOpen ? "1" : "0");
+    } catch {
+      /* stockage indisponible : l'état reste en mémoire */
+    }
+    content.hidden = !analysisOpen;
+    sec.classList.toggle("collapsed", !analysisOpen);
+    toggle.setAttribute("aria-expanded", String(analysisOpen));
+    toggle.textContent = analysisOpen ? "Replier" : "Déplier";
+  });
   sec.append(
     h(
       "div",
@@ -891,7 +916,10 @@ function analysisSection(m: Message, a: ReadingActions): HTMLElement {
         .filter((s) => count(s) > 0)
         .map((s) => h("span", { class: `sev sev-${s}` }, `${count(s)} ${SEV_LABEL[s].toLowerCase()}`)),
       m.findings.length ? null : h("span", { class: "muted-label" }, "aucun constat"),
+      h("span", { class: "spacer" }),
+      toggle,
     ),
+    content,
   );
   if (m.auth.length || m.dkim.length) {
     const row = h("div", { class: "auth-row" }, authChip("SPF", verdictOf(m, "spf")), authChip("DKIM", verdictOf(m, "dkim")), authChip("DMARC", verdictOf(m, "dmarc")));
@@ -905,16 +933,16 @@ function analysisSection(m: Message, a: ReadingActions): HTMLElement {
         ),
       );
     }
-    sec.append(row);
+    content.append(row);
   } else if (m.hops.length) {
-    sec.append(h("p", { class: "muted-label" }, "Aucun résultat SPF / DKIM / DMARC dans les en-têtes."));
+    content.append(h("p", { class: "muted-label" }, "Aucun résultat SPF / DKIM / DMARC dans les en-têtes."));
   }
-  if (major.length) sec.append(h("ol", { class: "findings" }, ...major.map((f) => findingItem(f, a))));
+  if (major.length) content.append(h("ol", { class: "findings" }, ...major.map((f) => findingItem(f, a))));
   if (minor.length) {
     const d = h("details", { class: "minor", open: minorOpen || !major.length }) as HTMLDetailsElement;
     d.addEventListener("toggle", () => (minorOpen = d.open));
     d.append(h("summary", {}, `${minor.length} constat${minor.length > 1 ? "s" : ""} mineur${minor.length > 1 ? "s" : ""}`), h("ol", { class: "findings" }, ...minor.map((f) => findingItem(f, a))));
-    sec.append(d);
+    content.append(d);
   }
   return sec;
 }

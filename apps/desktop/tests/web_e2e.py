@@ -193,6 +193,16 @@ def main() -> int:
         check("chiffr" in files_txt.lower() and "HTML" in files_txt, "badges des pièces jointes (archive chiffrée, HTML)")
         check("pаypal.example" in page.locator(".inventory").inner_text(), "URL : domaine Unicode réel affiché")
         page.screenshot(path=str(APP / "test-results" / "web-analyse.png"), full_page=False)
+        check(page.locator(".inventory > .seal").count() == 1 and page.locator(".reading-main .seal").count() == 0, "empreintes de la preuve en tête du panneau de droite")
+        page.click(".analysis-toggle")
+        check(page.locator(".analysis-body").is_hidden() and page.locator(".analysis-head .sev-high").is_visible(), "Replier : constats masqués, compteurs visibles")
+        page.locator(".message-item", has_text="Votre colis").click()
+        page.wait_for_selector("section.analysis")
+        check(page.locator(".analysis-body").is_hidden(), "état replié conservé d'un message à l'autre")
+        page.locator(".message-item", has_text="boite Microsoft 365").click()
+        page.wait_for_selector("section.analysis")
+        page.click(".analysis-toggle")
+        check(page.locator(".analysis-body").is_visible(), "Déplier : constats affichés")
         for fmt, sel in (("html", ".report-html"), ("json", ".report-json")):
             with page.expect_download() as dl:
                 page.click(sel)
