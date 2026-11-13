@@ -49,6 +49,15 @@ export class MessageHandler {
     else this.emit();
   }
 
+  /** Résumés recalculés (ré-analyse après import de clés) : même identifiants. */
+  replaceItems(summaries: Summary[]): void {
+    for (const s of summaries) {
+      const i = this.items.findIndex((x) => x.id === s.id);
+      if (i >= 0) this.items[i] = s;
+    }
+    this.emit();
+  }
+
   /** Épinglés d'abord, puis du plus récent au plus ancien. */
   sorted(): Summary[] {
     return [...this.items].sort((a, b) => {

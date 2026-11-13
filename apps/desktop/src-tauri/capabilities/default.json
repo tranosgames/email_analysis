@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capacités minimales : événements, dialogues d'ouverture, d'enregistrement et de confirmation. Ni shell, ni http, ni fs, ni opener (Constitution IV).",
+  "description": "Capacités minimales : événements, dialogues d'ouverture, d'enregistrement et de confirmation. Ni shell, ni http, ni fs ; aucune permission opener côté JavaScript : seuls les liens de vérification de clé listés par mf-sig sont ouverts, depuis Rust, après confirmation (FR-051).",
   "windows": ["main"],
   "permissions": [
     "core:default",

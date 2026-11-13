@@ -362,6 +362,83 @@ pub fn report_html(
         h.push_str("</table>");
     }
 
+    // Signatures PGP / S/MIME (FR-049, FR-050)
+    if !msg.signatures.is_empty() {
+        h.push_str("<h2>Signatures</h2><table>");
+        for c in &msg.signatures {
+            use mf_core::SignatureStatus as S;
+            let (cls, st) = match c.status {
+                S::Valid => ("ok", "VALIDE"),
+                S::Invalid => ("ko", "INVALIDE (contenu modifié ou signature fausse)"),
+                S::UnknownKey => ("", "non vérifiée : clé absente"),
+                S::Encrypted => ("", "message chiffré"),
+                S::Unsupported => ("", "non vérifiable"),
+            };
+            let mut lines = vec![format!(
+                "<span class=\"{cls}\">{st}</span> — {}",
+                esc(&c.kind)
+            )];
+            if !c.signer_ids.is_empty() {
+                lines.push(format!(
+                    "Signataire : {}",
+                    esc(&defang_text(&c.signer_ids.join(" ; ")))
+                ));
+            }
+            if let Some(m) = c.matches_from {
+                lines.push(format!(
+                    "Email du signataire {} l'expéditeur",
+                    if m {
+                        "identique à"
+                    } else {
+                        "<span class=\"ko\">différent de</span>"
+                    }
+                ));
+            }
+            if let Some(fp) = &c.fingerprint {
+                lines.push(format!(
+                    "Empreinte : <span class=\"mono\">{}</span>",
+                    esc(fp)
+                ));
+            }
+            if let Some(t) = &c.signed_at {
+                lines.push(format!("Signée le {} UTC", esc(t)));
+            }
+            if let Some(x) = &c.cert {
+                lines.push(format!(
+                    "Certificat émis par {} — valable {} → {} — chaîne : {}{}",
+                    esc(&x.issuer),
+                    esc(x.not_before.as_deref().unwrap_or("?")),
+                    esc(x.not_after.as_deref().unwrap_or("?")),
+                    esc(&x.chain),
+                    if x.valid_at_signing {
+                        ""
+                    } else {
+                        " — <span class=\"ko\">expiré à la date de signature</span>"
+                    }
+                ));
+            }
+            if let Some(v) = &c.verified_with {
+                lines.push(format!(
+                    "Vérifiée avec : <span class=\"mono\">{}</span>",
+                    esc(v)
+                ));
+            }
+            if let Some(n) = &c.note {
+                lines.push(esc(n));
+            }
+            let _ = write!(
+                h,
+                "<tr><th>{}</th><td>{}</td></tr>",
+                match c.scheme {
+                    mf_core::SignatureScheme::Pgp => "OpenPGP",
+                    mf_core::SignatureScheme::Smime => "S/MIME",
+                },
+                lines.join("<br>")
+            );
+        }
+        h.push_str("</table><p class=\"note\">Vérification locale avec les clés et certificats importés par l'analyste ; aucune requête réseau. Une signature valide prouve l'intégrité et la détention de la clé, pas l'identité : comparez l'empreinte avec une source sûre.</p>");
+    }
+
     // Authentification
     h.push_str("<h2>Authentification</h2>");
     if msg.auth.is_empty() {

@@ -2,7 +2,7 @@
 // WebAssembly analyse les octets hors du fil principal. Rien n'est envoyé sur le réseau.
 // Le worker conserve les octets de chaque preuve pour l'extraction des pièces jointes (FR-038).
 
-import init, { analyze, engine_version, extract_attachment, iocs_export, report, safe_file_name } from "./wasm/mf_wasm.js";
+import init, { analyze, engine_version, extract_attachment, import_key, iocs_export, list_keys, remove_key, report, safe_file_name } from "./wasm/mf_wasm.js";
 import wasmUrl from "./wasm/mf_wasm_bg.wasm?url";
 
 type Job =
@@ -10,7 +10,11 @@ type Job =
   | { id: number; kind: "extract"; key: number; path: number[]; index: number; filename: string }
   | { id: number; kind: "release"; key: number }
   | { id: number; kind: "report"; key: number; path: number[]; format: string; generated: string }
-  | { id: number; kind: "iocs"; json: string; format: string; defang: boolean };
+  | { id: number; kind: "iocs"; json: string; format: string; defang: boolean }
+  | { id: number; kind: "key-import"; name: string; bytes: ArrayBuffer }
+  | { id: number; kind: "key-remove"; fingerprint: string }
+  | { id: number; kind: "key-list" }
+  | { id: number; kind: "reanalyze"; key: number };
 
 /** `self` d'un worker dédié (le tsconfig cible le DOM, pas WebWorker). */
 const scope = self as unknown as { postMessage(message: unknown, transfer?: Transferable[]): void };
@@ -41,6 +45,18 @@ self.onmessage = async (e: MessageEvent<Job>) => {
       if (!ev) throw new Error("preuve inconnue");
       const text = report(ev.name, ev.bytes, new Uint32Array(job.path), job.format, job.generated);
       scope.postMessage({ id: job.id, ok: true, text });
+    } else if (job.kind === "key-import") {
+      scope.postMessage({ id: job.id, ok: true, text: import_key(job.name, new Uint8Array(job.bytes)) });
+    } else if (job.kind === "key-remove") {
+      remove_key(job.fingerprint);
+      scope.postMessage({ id: job.id, ok: true });
+    } else if (job.kind === "key-list") {
+      scope.postMessage({ id: job.id, ok: true, text: list_keys() });
+    } else if (job.kind === "reanalyze") {
+      // FR-049 : nouvelle analyse des mêmes octets, avec le trousseau à jour.
+      const ev = evidence.get(job.key);
+      if (!ev) throw new Error("preuve inconnue");
+      scope.postMessage({ id: job.id, ok: true, view: JSON.parse(analyze(ev.name, ev.bytes)) });
     } else if (job.kind === "iocs") {
       scope.postMessage({ id: job.id, ok: true, text: iocs_export(job.json, job.format, job.defang) });
     } else {

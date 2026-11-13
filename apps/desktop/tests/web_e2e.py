@@ -249,6 +249,48 @@ def main() -> int:
         page.locator("section.files").scroll_into_view_if_needed()
         page.screenshot(path=str(APP / "test-results" / "web-quishing.png"))
 
+        # FR-049 à FR-051 : signatures PGP / S/MIME, trousseau local, liens externes.
+        def open_msg(subject: str) -> None:
+            page.locator(".message-item", has_text=subject).click()
+            page.wait_for_selector("section.signatures")
+
+        open_msg("Virement confirmé (PGP)")
+        check("Clé inconnue" in page.locator(".sig-status").inner_text(), "PGP sans clé importée : « clé inconnue »")
+        check(page.locator(".message-item", has_text="Virement confirmé (PGP)").locator(".verdict-pill.v-suspicious").count() == 1, "sans clé : jamais « légitime »")
+        # Lien externe : la confirmation est refusée (Playwright rejette les boîtes) → rien n'est ouvert.
+        pages_before = len(ctx.pages)
+        page.locator(".ext-link").first.click()
+        page.wait_for_timeout(300)
+        check(len(ctx.pages) == pages_before, "lien externe : rien n'est ouvert sans confirmation")
+        with page.expect_file_chooser() as fc:
+            page.click(".import-keys")
+        fc.value.set_files([str(CORPUS / "keys" / "alice-pgp.asc"), str(CORPUS / "keys" / "test-ca.pem")])
+        page.wait_for_selector(".sig-status:has-text('Signature valide')")
+        sig = page.locator("section.signatures").inner_text()
+        check("Alice Martin" in sig and "correspond à l'email de la clé" in sig, "PGP valide après import, signataire = expéditeur")
+        check(page.locator(".message-item", has_text="Virement confirmé (PGP)").locator(".verdict-pill.v-legitimate").count() == 1, "verdict « légitime » après vérification")
+        check("Signature PGP valide" in page.locator(".verdict-reasons").inner_text(), "verdict fondé sur la signature")
+        check("Clés et certificats (2)" in page.locator(".keys-button").inner_text(), "trousseau : 2 entrées")
+        page.screenshot(path=str(APP / "test-results" / "web-signature.png"))
+        open_msg("Virement modifié (PGP)")
+        check("Signature invalide" in page.locator(".sig-status").inner_text(), "PGP : corps modifié détecté")
+        open_msg("Signé par une autre (PGP)")
+        check("ne correspond pas" in page.locator("section.signatures").inner_text(), "PGP : signataire ≠ expéditeur")
+        open_msg("Virement confirmé (S/MIME)")
+        sig = page.locator("section.signatures").inner_text()
+        check("Signature valide" in sig and "rattaché à une autorité importée" in sig, "S/MIME valide, autorité importée")
+        open_msg("Virement modifié (S/MIME)")
+        check("Signature invalide" in page.locator(".sig-status").inner_text(), "S/MIME : corps modifié détecté")
+        open_msg("Certificat expiré (S/MIME)")
+        check("expiré à la date de signature" in page.locator("section.signatures").inner_text(), "S/MIME : certificat expiré")
+        open_msg("Signature opaque (S/MIME)")
+        check("Signature valide" in page.locator(".sig-status").inner_text(), "S/MIME opaque (.p7m) vérifiée")
+        page.click(".keys-button")
+        page.wait_for_selector("dialog.key-dialog[open]")
+        check(page.locator(".key-list li").count() == 2 and "MailForensics Test CA" in page.locator(".key-list").inner_text(), "gestionnaire de clés : liste")
+        page.screenshot(path=str(APP / "test-results" / "web-trousseau.png"))
+        page.click(".key-close")
+
         # Hors-ligne : un nouveau dépôt fonctionne toujours (doublon détecté).
         ctx.set_offline(True)
         with page.expect_file_chooser() as fc:
@@ -288,6 +330,13 @@ def main() -> int:
 
         check(not requests, f"aucune requête réseau après le chargement (vu : {requests[:3]})")
         check(not errors, f"aucune erreur JavaScript ({errors[:2]})")
+
+        # Le trousseau est mémorisé sur le poste et réimporté au rechargement.
+        ctx.set_offline(False)
+        page.reload()
+        page.wait_for_selector("html[data-engine]", state="attached")
+        page.wait_for_selector(".keys-button:has-text('(2)')", timeout=10000)
+        check(True, "trousseau réimporté après rechargement")
         browser.close()
 
     print(f"\n{len(failures)} échec(s)")

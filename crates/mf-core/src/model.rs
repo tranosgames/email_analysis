@@ -312,6 +312,85 @@ pub enum IocKind {
     Md5,
 }
 
+/// Signature cryptographique d'un message (FR-049, FR-050).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SignatureScheme {
+    Pgp,
+    Smime,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SignatureStatus {
+    /// Signature mathématiquement valide : contenu intact depuis la signature.
+    Valid,
+    /// Signature fausse : contenu modifié après signature (ou signature forgée).
+    Invalid,
+    /// Clé publique absente : importer la clé du signataire pour vérifier.
+    UnknownKey,
+    /// Message chiffré : illisible sans la clé privée du destinataire.
+    Encrypted,
+    /// Format ou algorithme non pris en charge, signature illisible.
+    Unsupported,
+}
+
+/// Certificat X.509 du signataire S/MIME.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CertInfo {
+    pub subject: String,
+    pub issuer: String,
+    pub serial: String,
+    pub not_before: Option<String>,
+    pub not_after: Option<String>,
+    pub emails: Vec<String>,
+    /// SHA-256 du certificat (DER), en hexadécimal.
+    pub sha256: String,
+    /// Certificat au format PEM, pour l'exporter.
+    pub pem: String,
+    /// Valide à la date de signature (ou à la date du message).
+    pub valid_at_signing: bool,
+    /// `trusted` (autorité importée), `unknown_ca`, `self_signed`, `invalid_chain`.
+    pub chain: String,
+    /// Autorité importée qui a validé la chaîne.
+    pub trusted_by: Option<String>,
+}
+
+/// Lien externe de vérification de la clé, ouvert uniquement sur action de l'analyste (FR-051).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ExternalLink {
+    pub label: String,
+    pub url: String,
+}
+
+/// Résultat de vérification d'une signature.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignatureCheck {
+    pub scheme: SignatureScheme,
+    /// `pgp_mime`, `pgp_inline`, `smime_detached`, `smime_opaque`, `pgp_encrypted`, `smime_encrypted`.
+    pub kind: String,
+    pub status: SignatureStatus,
+    /// Empreinte complète de la clé (PGP) ou SHA-256 du certificat (S/MIME), en hexadécimal.
+    pub fingerprint: Option<String>,
+    /// Identifiant court de la clé PGP (16 hex).
+    pub key_id: Option<String>,
+    /// Identités de la clé (PGP) ou noms du certificat.
+    pub signer_ids: Vec<String>,
+    pub signer_emails: Vec<String>,
+    /// L'email de la clé ou du certificat est celui de l'expéditeur (From).
+    pub matches_from: Option<bool>,
+    pub signed_at: Option<String>,
+    pub hash_algorithm: Option<String>,
+    pub key_algorithm: Option<String>,
+    pub key_expired: Option<bool>,
+    pub key_revoked: Option<bool>,
+    pub cert: Option<CertInfo>,
+    /// Clé ou autorité importée utilisée pour vérifier (traçabilité).
+    pub verified_with: Option<String>,
+    pub note: Option<String>,
+    pub links: Vec<ExternalLink>,
+}
+
 /// Verdict de synthèse (FR-045).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -494,6 +573,9 @@ pub struct Message {
     pub iocs: Vec<Ioc>,
     /// Verdict de synthèse (FR-045).
     pub verdict: Option<Verdict>,
+    /// Signatures PGP / S/MIME vérifiées hors-ligne (FR-049, FR-050).
+    #[serde(default)]
+    pub signatures: Vec<SignatureCheck>,
     /// Corps MIME brut tel que transmis (EML), pour la vérification DKIM ; jamais sérialisé.
     #[serde(skip)]
     pub raw_body: Option<Vec<u8>>,

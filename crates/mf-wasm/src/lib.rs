@@ -2,14 +2,44 @@
 //! Exactement le même code que la CLI et l'application de bureau : seule l'origine des octets change.
 #![forbid(unsafe_code)]
 
+use std::cell::RefCell;
 use wasm_bindgen::prelude::*;
+
+thread_local! {
+    /// Trousseau de l'analyste (FR-049, FR-050) : réimporté par la page à chaque démarrage.
+    static KEYS: RefCell<mf_engine::Keyring> = RefCell::new(mf_engine::Keyring::default());
+}
+
+fn open(file_name: &str, bytes: Vec<u8>) -> Result<mf_engine::Analyzed, JsError> {
+    KEYS.with(|k| mf_engine::open_bytes_with(file_name, bytes, &k.borrow()))
+        .map_err(|e| JsError::new(&e.to_string()))
+}
+
+/// Importe une clé PGP ou un certificat ; retourne les entrées ajoutées (JSON).
+#[wasm_bindgen]
+pub fn import_key(name: &str, bytes: Vec<u8>) -> Result<String, JsError> {
+    let added = KEYS
+        .with(|k| k.borrow_mut().import(name, &bytes))
+        .map_err(|e| JsError::new(&e))?;
+    serde_json::to_string(&added).map_err(|e| JsError::new(&e.to_string()))
+}
+
+#[wasm_bindgen]
+pub fn remove_key(fingerprint: &str) {
+    KEYS.with(|k| k.borrow_mut().remove(fingerprint));
+}
+
+/// Entrées du trousseau (JSON).
+#[wasm_bindgen]
+pub fn list_keys() -> String {
+    KEYS.with(|k| serde_json::to_string(&k.borrow().entries).unwrap_or_else(|_| "[]".into()))
+}
 
 /// Analyse un fichier `.eml` / `.msg` déjà lu par le navigateur.
 /// Retourne le JSON `{ evidence, message }` (mêmes types que `mf show --json`).
 #[wasm_bindgen]
 pub fn analyze(file_name: &str, bytes: Vec<u8>) -> Result<String, JsError> {
-    let analyzed =
-        mf_engine::open_bytes(file_name, bytes).map_err(|e| JsError::new(&e.to_string()))?;
+    let analyzed = open(file_name, bytes)?;
     serde_json::to_string(&analyzed).map_err(|e| JsError::new(&e.to_string()))
 }
 
@@ -29,8 +59,7 @@ pub fn extract_attachment(
     path: Vec<u32>,
     index: u32,
 ) -> Result<Vec<u8>, JsError> {
-    let analyzed =
-        mf_engine::open_bytes(file_name, bytes).map_err(|e| JsError::new(&e.to_string()))?;
+    let analyzed = open(file_name, bytes)?;
     mf_engine::extract_attachment(&analyzed.message, &path, index)
         .map(|x| x.data)
         .map_err(|e| JsError::new(&e.to_string()))
@@ -52,7 +81,7 @@ pub fn report(
     format: &str,
     generated_utc: &str,
 ) -> Result<String, JsError> {
-    let a = mf_engine::open_bytes(file_name, bytes).map_err(|e| JsError::new(&e.to_string()))?;
+    let a = open(file_name, bytes)?;
     let m = mf_engine::descend(&a.message, &path)
         .ok_or_else(|| JsError::new("message embarqué introuvable"))?;
     let provenance = path

@@ -158,6 +158,12 @@ Workspace Cargo : `crates/mf-*/src/`, app : `apps/desktop/`, tests transverses :
 - [x] T127 [US1] QR codes : `crates/mf-analysis/src/qr.rs` (image + rqrr, limites de taille/mémoire, 40 images max), images jointes et `data:` du HTML ; règles `attachment_qr_code`, `url_qr_code` (FR-046)
 - [x] T128 [US1] Pièces jointes HTML/SVG : `crates/mf-analysis/src/htmlatt.rs` (formulaires, mot de passe, exfiltration, obfuscation + décodage `atob()`, redirections, destinataire pré-rempli) ; règles `attachment_credential_form`, `attachment_exfiltration`, `attachment_obfuscated_script`, `attachment_auto_redirect`, `attachment_recipient_prefill` (FR-047)
 - [x] T129 [US1] Redirections : `crates/mf-analysis/src/redirects.rs` (Safe Links, Proofpoint v2/v3, Google, Bing base64, Facebook, YouTube, LinkedIn, générique ; chaînes imbriquées) ; règle `url_redirector_abuse` ; pas de faux « texte ≠ destination » derrière une réécriture ; interface, rapport, corpus `quishing-html-attachment.eml`, e2e (FR-048)
+- [x] T132 [US1] Corpus signé `tests/corpus/tools/make_signed.py` : PGP/MIME (valide, modifié, From ≠ clé, clé inconnue), PGP inline, S/MIME (valide, modifié, certificat expiré, opaque), clés jetables `tests/corpus/keys/`
+- [x] T133 [US1] mf-eml : octets bruts exacts de la partie signée et de la signature (`multipart/signed`, `application/pkcs7-mime`)
+- [x] T134 [US1] Vérification OpenPGP `crates/mf-analysis/src/sig/pgp.rs` (rPGP) + tests (FR-049)
+- [x] T135 [US1] Vérification S/MIME `crates/mf-analysis/src/sig/smime.rs` (RustCrypto cms/x509) + tests (FR-050)
+- [x] T136 [US1] Magasin de clés : import local (web, bureau), option CLI `--keys`, empreintes utilisées dans le rapport
+- [x] T137 [US1] Constats et verdict signature ; bloc « Signature » de l'interface, liens externes avec confirmation (FR-051), rapport HTML/JSON, e2e
 
 ### Plus tard (idées retenues, non planifiées)
 
@@ -398,7 +404,7 @@ Task: "T031 Sanitisation HTML dans crates/mf-analysis/src/html.rs"
 | FR-037 | T091, T092, T097 | | FR-038 | T098–T104 |
 | FR-039 | T105–T110 | | FR-040 | T116, T117 |
 | FR-041 | T113, T114, T116 | | FR-042 | T111, T112, T115, T116 |
-| FR-043 | T120, T122, T125 | | FR-044 | T123–T125 | | FR-045 | T126 | | FR-046 | T127 | | FR-047 | T128 | | FR-048 | T129 |
+| FR-043 | T120, T122, T125 | | FR-044 | T123–T125 | | FR-045 | T126 | | FR-046 | T127 | | FR-047 | T128 | | FR-048 | T129 | | FR-049 | T132–T134, T137 | | FR-050 | T132, T133, T135, T137 | | FR-051 | T136, T137 |
 
 ---
 

@@ -4,7 +4,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use mf_core::{Evidence, Message};
-use mf_engine::Analyzed;
+use mf_engine::{Analyzed, KeyEntry, Keyring};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -12,6 +12,8 @@ use std::sync::Mutex;
 #[derive(Default)]
 struct AppState {
     loaded: Mutex<Vec<Analyzed>>,
+    /// Clés publiques et certificats importés par l'analyste (FR-049, FR-050).
+    keys: Mutex<Keyring>,
 }
 
 /// Ligne de la liste latérale (comme msg-reader : expéditeur, objet, date, badges).
@@ -101,9 +103,10 @@ fn expand(paths: Vec<String>) -> Vec<PathBuf> {
 fn open_paths(paths: Vec<String>, state: tauri::State<'_, AppState>) -> Vec<OpenResult> {
     let files = expand(paths);
     let mut results = Vec::with_capacity(files.len());
+    let keys = state.keys.lock().unwrap_or_else(|e| e.into_inner()).clone();
     for f in files {
         let path = f.display().to_string();
-        match mf_engine::open(&f) {
+        match mf_engine::open_with(&f, &keys) {
             Ok(a) => {
                 let mut loaded = state.loaded.lock().unwrap_or_else(|e| e.into_inner());
                 if let Some(of) = loaded
@@ -255,9 +258,81 @@ fn initial_paths() -> Vec<String> {
         .collect()
 }
 
+/// Importe une clé PGP ou un certificat (octets lus par l'interface).
+#[tauri::command]
+fn import_key(
+    name: String,
+    data: Vec<u8>,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<KeyEntry>, String> {
+    state
+        .keys
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .import(&name, &data)
+}
+
+#[tauri::command]
+fn remove_key(fingerprint: String, state: tauri::State<'_, AppState>) {
+    state
+        .keys
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(&fingerprint);
+}
+
+#[tauri::command]
+fn list_keys(state: tauri::State<'_, AppState>) -> Vec<KeyEntry> {
+    state
+        .keys
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .entries
+        .clone()
+}
+
+/// Ré-analyse toutes les preuves ouvertes avec le trousseau courant (relues sur disque :
+/// l'empreinte est recalculée et doit rester identique).
+#[tauri::command]
+fn reanalyze_all(state: tauri::State<'_, AppState>) -> Result<Vec<Summary>, String> {
+    let keys = state.keys.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let mut loaded = state.loaded.lock().unwrap_or_else(|e| e.into_inner());
+    for a in loaded.iter_mut() {
+        let fresh =
+            mf_engine::open_with(Path::new(&a.evidence.path), &keys).map_err(|e| e.to_string())?;
+        if fresh.evidence.sha256 != a.evidence.sha256 {
+            return Err(format!(
+                "{} a changé sur le disque depuis son ouverture",
+                a.evidence.path
+            ));
+        }
+        *a = fresh;
+    }
+    Ok(loaded
+        .iter()
+        .enumerate()
+        .map(|(i, a)| summary(i, a))
+        .collect())
+}
+
+/// Ouvre un lien de vérification de clé dans le navigateur système (FR-051), après
+/// confirmation de l'analyste côté interface. Seuls les services listés par `mf-sig` passent.
+#[tauri::command]
+fn open_verification_link(url: String, app: tauri::AppHandle) -> Result<(), String> {
+    if !mf_engine::is_verification_link(&url) {
+        return Err("lien non autorisé".into());
+    }
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // Utilisé uniquement depuis Rust (open_verification_link) : aucune permission JavaScript.
+        .plugin(tauri_plugin_opener::init())
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
             open_paths,
@@ -266,7 +341,12 @@ fn main() {
             save_attachment,
             build_report,
             export_iocs,
-            save_text
+            save_text,
+            import_key,
+            remove_key,
+            list_keys,
+            reanalyze_all,
+            open_verification_link
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

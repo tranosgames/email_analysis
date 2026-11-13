@@ -121,8 +121,8 @@ button { font: inherit; color: inherit; }
   border-right: 1px solid var(--rule);
   min-height: 0;
 }
-.list-toolbar { display: flex; gap: var(--s2); padding: var(--s3); flex-wrap: wrap; }
-.list-status { padding: 0 var(--s3); font-size: 13px; color: var(--ink-soft); }
+.list-toolbar { display: flex; gap: var(--s2); padding: var(--s3); flex-wrap: wrap; flex-shrink: 0; }
+.list-status { padding: 0 var(--s3) var(--s1); font-size: 13px; color: var(--ink-soft); flex-shrink: 0; }
 .list-status:empty { display: none; }
 .message-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
 .message-item {
@@ -310,7 +310,7 @@ button { font: inherit; color: inherit; }
   @keyframes unfold { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 }
 
-.list-footer { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); padding: var(--s3); border-top: 1px solid var(--rule); }
+.list-footer { flex-shrink: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); padding: var(--s3); border-top: 1px solid var(--rule); }
 .list-footer .local-note { flex-basis: 100%; }
 .export-all { font-size: 13px; min-height: 28px; }
 .local-note { margin: 0; font-size: 12px; color: var(--ink-soft); }
@@ -436,3 +436,37 @@ button { font: inherit; color: inherit; }
 .html-report dd.bad { color: var(--sev-high); font-weight: 700; }
 .url-note.redirect .url-text { font-size: 12px; }
 .url-note.redirect.bad { color: var(--sev-high); }
+
+/* ——— Signatures PGP / S/MIME (FR-049 à FR-051) ——— */
+.signatures { display: flex; flex-direction: column; gap: var(--s2); margin: 0 0 var(--s3); }
+.sig { border: 1px solid var(--rule); border-left: 4px solid var(--rule); border-radius: 6px; padding: var(--s3); background: var(--sheet); }
+.sig.sig-good { border-left-color: var(--ok); }
+.sig.sig-bad { border-left-color: var(--sev-high); }
+.sig.sig-warn { border-left-color: var(--sev-medium); }
+.sig-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s2); margin-bottom: var(--s2); }
+.sig-status { font-weight: 800; font-size: 15px; }
+.sig-status.good { color: var(--ok); }
+.sig-status.bad { color: var(--sev-high); }
+.sig-status.warn { color: color-mix(in srgb, var(--sev-medium) 55%, var(--ink)); }
+.sig-kind { font-size: 13px; color: var(--ink-soft); }
+.sig-details { display: grid; grid-template-columns: auto 1fr; gap: 2px var(--s3); margin: 0; font-size: 13px; }
+.sig-details dt { font-weight: 700; }
+.sig-details dd { margin: 0; overflow-wrap: anywhere; }
+.sig-details dd.good { color: var(--ok); }
+.sig-details dd.bad { color: var(--sev-high); font-weight: 700; }
+.sig-details dd.warn { color: color-mix(in srgb, var(--sev-medium) 55%, var(--ink)); }
+.fp { font-family: var(--mono); font-size: 12.5px; letter-spacing: 0.02em; user-select: all; }
+.sig-note { margin: var(--s2) 0 0; font-size: 13px; }
+.sig-links { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s2); margin-top: var(--s2); padding-top: var(--s2); border-top: 1px dashed var(--rule); }
+
+/* Trousseau */
+.key-dialog { width: min(640px, calc(100vw - 32px)); border: 1px solid var(--rule); border-radius: 8px; background: var(--sheet); color: var(--ink); padding: var(--s4); }
+.key-dialog::backdrop { background: rgb(0 0 0 / 0.35); }
+.key-dialog h2 { margin: 0 0 var(--s2); font-size: 18px; }
+.key-list { list-style: none; margin: var(--s3) 0; padding: 0; border-top: 1px solid var(--rule); max-height: 50vh; overflow: auto; }
+.key-list li { display: grid; grid-template-columns: auto 1fr auto; gap: var(--s3); align-items: center; padding: var(--s2) 0; border-bottom: 1px solid var(--rule); }
+.key-kind { font-size: 11px; font-weight: 800; border: 1px solid var(--rule); border-radius: 4px; padding: 0 5px; }
+.key-label { font-weight: 700; overflow-wrap: anywhere; }
+.key-dialog .file-actions { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
+.key-dialog .spacer { flex: 1; }
+.keys-button { font-size: 13px; min-height: 28px; }

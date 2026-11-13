@@ -1,0 +1,54 @@
+Received: from mail.signed.example (mail.signed.example [198.51.100.20])
+	by mx.victim.example with ESMTPS id S1; Fri, 13 Nov 2026 10:00:00 +0000
+Authentication-Results: mx.victim.example; spf=pass smtp.mailfrom=signed.example
+From: Dana Leroy <dana@signed.example>
+To: victim@victim.example
+Subject: Virement modifié (S/MIME)
+Date: Fri, 13 Nov 2026 10:00:00 +0000
+Message-ID: <virement-17139653@signed.example>
+MIME-Version: 1.0
+Content-Type: multipart/signed; protocol="application/pkcs7-signature";
+	micalg=sha-256; boundary="SMIME"
+
+--SMIME
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Bonjour,
+
+Ci-joint la confirmation du virement de 9 850 € prévu le 20 novembre.
+
+Alice
+
+--SMIME
+Content-Type: application/pkcs7-signature; name="smime.p7s"
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="smime.p7s"
+
+MIIFkQYJKoZIhvcNAQcCoIIFgjCCBX4CAQExDzANBglghkgBZQMEAgEFADALBgkqhkiG9w0BBwGg
+ggM1MIIDMTCCAhmgAwIBAgIUP0tUXnfsyaQwkoaR3nO0YXHtxX4wDQYJKoZIhvcNAQELBQAwOTEe
+MBwGA1UEAwwVTWFpbEZvcmVuc2ljcyBUZXN0IENBMRcwFQYDVQQKDA5Db3JwdXMgZGUgdGVzdDAe
+Fw0yNjAxMDEwMDAwMDBaFw0yODAxMDEwMDAwMDBaMDMxDTALBgNVBAMMBERhbmExIjAgBgkqhkiG
+9w0BCQEWE2RhbmFAc2lnbmVkLmV4YW1wbGUwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIB
+AQDdoZOxtQRlIrCJcQhtsUWhoW3atDQsBKoQtTlZSdkLFRnHnFBakENDJ1A8U6qbZB1YMdbN3J8O
+q4HZloBMohF25dxYNBhlZXpD4MCnpkYnN1DGeiy3YZkmjFZ63rIhBIZEijEmlieNVRrTAfu1wzz/
+fJRVFhOuMrnzmo88DrR1lP5CQyvtib5m2ny54/J8oAFIYqPrO9wsGWNZx9ib81JbMbSVdaKotg9i
+IuXlc4dgfc6hKBxBe9MwadABkcOq7lj5Wy3exU2fU/1FoIXkD+JnaQ4xdYdI0J4+MlnVEe/Yn4IO
+HFLVyZXtWrLEilIZ1s8VEfuxZGPrscSgtFz0+A3FAgMBAAGjNzA1MB4GA1UdEQQXMBWBE2RhbmFA
+c2lnbmVkLmV4YW1wbGUwEwYDVR0lBAwwCgYIKwYBBQUHAwQwDQYJKoZIhvcNAQELBQADggEBAJPJ
+GJYwHiFK9MqKgv8qC0bEmi0XUdHeGlcQG5tXQJVrmrCsukS0+OvKjlqwnQe3u+FbWtgZCN15jm5x
+FKG4QPnUT1ktDlwwWamJVdk9nsGg0k1guPsXO/bmD/zfSNFRRQSmVBAvPCgJR4JiUvqgfzfwB/ld
+XO5FpgR/N0uV6UYnfYc/m5MW44Sqzcud4wry3vSgJGwYx+YgLVNZOTU8nsEKInYV+ZtcMl35uKdM
+9Zn81+Mk7Fn/hiLIrHthNtTGCtDXJ9P9D+uEFPShfS5J2v7XfSxS8AJRzpnRABkafXncnHVtF4/H
+qQ5frPz85jFDEXpqmc1tW7tpYjTTjTm8KgMxggIgMIICHAIBATBRMDkxHjAcBgNVBAMMFU1haWxG
+b3JlbnNpY3MgVGVzdCBDQTEXMBUGA1UECgwOQ29ycHVzIGRlIHRlc3QCFD9LVF537MmkMJKGkd5z
+tGFx7cV+MA0GCWCGSAFlAwQCAQUAoIGhMBgGCSqGSIb3DQEJAzELBgkqhkiG9w0BBwEwHAYJKoZI
+hvcNAQkFMQ8XDTI2MTExMzE1NDc1M1owLwYJKoZIhvcNAQkEMSIEIL2dnclsK5UlsDUqgqcbzSye
+P+vsgT+1EILth/FHWAJPMDYGCSqGSIb3DQEJDzEpMCcwCwYJYIZIAWUDBAEqMAsGCWCGSAFlAwQB
+FjALBglghkgBZQMEAQIwDQYJKoZIhvcNAQEBBQAEggEAhRTsm5cAZNhZFOfg3L1Fid4JMrHQhHV+
+K+t8Y7UR04g4ih381Kz80jkjZW748w1RF/qRmX22Xtc94XAlCCeSwWLAYb6i0j0/SWX7mBUMjrZl
+gHQ3lXBMV81Q6et+QjXmsG9zBykqVLjcUbbi9lAsdST0KF6CHrEMstX0DTnTeovDSuVIBzw8iBNg
+GMFHAya+SAPmdRkyHeIx/U8qZVSPYBP3YRGT0hS47JM8J5DKV3skqJ+hTNeeyMLehggHD+F9UG/Q
++HVAljFWT/jZYSdM0cmj5q3dC1MkZ2XSVInzvUF563bxv6tEE2OTCOZ+o0JKBgHWZbf10AXN0PLM
+58C2aQ==
+--SMIME--

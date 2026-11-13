@@ -20,8 +20,15 @@ pub mod verdict;
 use mf_core::{Attachment, AttachmentFlag, Disposition, Message, UrlFlag, UrlLocation};
 use std::collections::HashMap;
 
-/// Enrichit le message et, récursivement, ses messages embarqués.
+pub use mf_sig::{KeyEntry, Keyring};
+
+/// Enrichit le message et, récursivement, ses messages embarqués (sans clés importées).
 pub fn analyze(msg: &mut Message) {
+    analyze_with(msg, &Keyring::default());
+}
+
+/// Comme [`analyze`], avec le trousseau de l'analyste pour vérifier les signatures (FR-049, FR-050).
+pub fn analyze_with(msg: &mut Message, keys: &Keyring) {
     if let Some(raw_html) = &msg.body_html {
         let cids: HashMap<String, (String, Vec<u8>)> = msg
             .attachments
@@ -98,7 +105,7 @@ pub fn analyze(msg: &mut Message) {
             }
         }
         if let Some(inner) = a.embedded.as_deref_mut() {
-            analyze(inner);
+            analyze_with(inner, keys);
         }
     }
     if let Some(html) = &msg.body_html {
@@ -135,6 +142,7 @@ pub fn analyze(msg: &mut Message) {
     msg.hops = chain;
     msg.auth = auth::results(&msg.headers);
     msg.dkim = dkim::checks(&msg.headers, msg.raw_body.as_deref());
+    msg.signatures = signatures(msg, keys);
     msg.findings = findings::evaluate(msg);
     msg.iocs = iocs::extract(msg);
     msg.verdict = Some(verdict::evaluate(msg));
@@ -162,4 +170,46 @@ fn is_image(a: &Attachment) -> bool {
     a.detected_mime
         .as_deref()
         .is_some_and(|m| m.starts_with("image/") && m != "image/svg+xml")
+}
+
+/// Signatures PGP / S/MIME : sur le corps MIME d'origine (EML) ou, pour un message Outlook,
+/// sur la pièce `smime.p7m` qui contient le message signé complet.
+fn signatures(msg: &Message, keys: &Keyring) -> Vec<mf_core::SignatureCheck> {
+    let from: Vec<String> = msg
+        .from
+        .iter()
+        .filter_map(|a| a.address.as_ref().map(|x| x.trim().to_ascii_lowercase()))
+        .collect();
+    let date = msg
+        .date_utc
+        .as_deref()
+        .and_then(|d| chrono::DateTime::parse_from_rfc3339(d).ok())
+        .map(|d| d.timestamp());
+    if let Some(body) = msg.raw_body.as_deref() {
+        let header = |n: &str| {
+            msg.headers
+                .iter()
+                .find(|h| h.name.eq_ignore_ascii_case(n))
+                .map(|h| h.value.as_str())
+        };
+        return mf_sig::check(
+            header("Content-Type"),
+            header("Content-Transfer-Encoding"),
+            body,
+            &from,
+            date,
+            keys,
+        );
+    }
+    msg.attachments
+        .iter()
+        .filter(|a| {
+            let n = a.filename.to_ascii_lowercase();
+            n.ends_with(".p7m")
+                || a.declared_mime
+                    .as_deref()
+                    .is_some_and(|m| m.contains("pkcs7-mime") || m.contains("multipart/signed"))
+        })
+        .flat_map(|a| mf_sig::check_entity(&a.data, &from, date, keys))
+        .collect()
 }

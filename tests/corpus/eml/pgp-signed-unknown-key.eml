@@ -1,0 +1,42 @@
+Received: from mail.signed.example (mail.signed.example [198.51.100.20])
+	by mx.victim.example with ESMTPS id S1; Fri, 13 Nov 2026 10:00:00 +0000
+Authentication-Results: mx.victim.example; spf=pass smtp.mailfrom=unknown.example
+From: Carol Inconnue <carol@unknown.example>
+To: victim@victim.example
+Subject: Clé inconnue (PGP)
+Date: Fri, 13 Nov 2026 10:00:00 +0000
+Message-ID: <clé-36282104@signed.example>
+MIME-Version: 1.0
+Content-Type: multipart/signed; micalg=pgp-sha256;
+	protocol="application/pgp-signature"; boundary="SIG"
+
+--SIG
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Bonjour,
+
+Ci-joint la confirmation du virement de 1 250 € prévu le 20 novembre.
+
+Alice
+
+--SIG
+Content-Type: application/pgp-signature; name="signature.asc"
+Content-Description: OpenPGP digital signature
+
+-----BEGIN PGP SIGNATURE-----
+
+iQHKBAABCAA0FiEE7j+oAjiGh0jcXnZD+qaYAvy2xLsFAmr3MSkWHGNhcm9sQHVu
+a25vd24uZXhhbXBsZQAKCRD6ppgC/LbEu0TmC/wMkHlWR3xsmc8E9nEWynGuEXgL
+8VedY4ddr93oNWJas/Xp595W1OHtqeCJO89Aa7smZQ2+JIhKZykRmf3nj8DbkNRC
+keFtXgoA0v4maAPExN9SssHndCxDGtqk6uP2DhZhVXJQSmIbvX9e4IOdGypl9VBD
+KG95TatJiS5KLa/nKYlAwPLEXhQH2jLikjYaQF50ptzTPSjbvLzvXziKj8o960fP
+L4PjRl1bGAXdZt7xJ6sJz3r5yR33iO8VUiHTEjTyBhjCUGGsFnnRz2rm9fwc544W
+Lh8KxHXmBcZrq9X6AuZmMDny0OllWWFaBPTTOqZdzfCh+d4blAItnDESQI+amLOn
+Jsb+LAuTuizcPA9ojdVm0unRaaWQ/Y+JCjGdn2l2R7sU0vhNxbltERJ+9Xery23J
+1zSJZjvL+zBh2WGjJQdJ7/HhS5IYvPy3LAA7coe+25JMqFC/HurJIgfczBrrZ6rI
+BXdBFGRWlb2cI/PVj/gMNqxIS995K9XO5K1rnAs=
+=uyU6
+-----END PGP SIGNATURE-----
+
+--SIG--

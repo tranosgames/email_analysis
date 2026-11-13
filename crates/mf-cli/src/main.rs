@@ -16,6 +16,10 @@ struct Cli {
     /// Sortie JSON (un document par commande).
     #[arg(long, global = true)]
     json: bool,
+    /// Clés publiques PGP et certificats (fichier ou dossier : .asc, .gpg, .pem, .cer, .crt)
+    /// pour vérifier les signatures ; répétable.
+    #[arg(long, global = true)]
+    keys: Vec<PathBuf>,
     #[command(subcommand)]
     cmd: Cmd,
 }
@@ -374,7 +378,80 @@ fn print_urls(m: &Message, defang: bool) {
     }
 }
 
+/// Trousseau construit à partir des fichiers et dossiers `--keys`.
+fn load_keys(paths: &[PathBuf]) -> Result<mf_engine::Keyring, String> {
+    let mut k = mf_engine::Keyring::default();
+    let mut files = Vec::new();
+    for p in paths {
+        if p.is_dir() {
+            let mut v: Vec<PathBuf> = std::fs::read_dir(p)
+                .map_err(|e| format!("{}: {e}", p.display()))?
+                .filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|f| {
+                    f.extension().and_then(|x| x.to_str()).is_some_and(|x| {
+                        matches!(
+                            x.to_ascii_lowercase().as_str(),
+                            "asc" | "gpg" | "pgp" | "pem" | "cer" | "crt" | "der"
+                        )
+                    })
+                })
+                .collect();
+            v.sort();
+            files.extend(v);
+        } else {
+            files.push(p.clone());
+        }
+    }
+    for f in files {
+        let data = std::fs::read(&f).map_err(|e| format!("{}: {e}", f.display()))?;
+        let name = f.file_name().map_or_else(
+            || f.display().to_string(),
+            |n| n.to_string_lossy().into_owned(),
+        );
+        k.import(&name, &data)
+            .map_err(|e| format!("{}: {e}", f.display()))?;
+    }
+    Ok(k)
+}
+
+fn print_signatures(m: &Message) {
+    for c in &m.signatures {
+        let scheme = match c.scheme {
+            mf_core::SignatureScheme::Pgp => "PGP",
+            mf_core::SignatureScheme::Smime => "S/MIME",
+        };
+        let st = match c.status {
+            mf_core::SignatureStatus::Valid => "VALIDE",
+            mf_core::SignatureStatus::Invalid => "INVALIDE",
+            mf_core::SignatureStatus::UnknownKey => "clé inconnue",
+            mf_core::SignatureStatus::Encrypted => "chiffré",
+            mf_core::SignatureStatus::Unsupported => "non vérifiable",
+        };
+        println!(
+            "Signature {scheme} ({}) : {st}{}",
+            c.kind,
+            c.signer_ids
+                .first()
+                .map(|s| format!(" — {s}"))
+                .unwrap_or_default()
+        );
+        if let Some(fp) = c.fingerprint.as_deref() {
+            println!("  empreinte {fp}");
+        }
+        if let Some(t) = c.signed_at.as_deref() {
+            println!("  signée le {t}");
+        }
+        if let Some(x) = &c.cert {
+            println!("  certificat émis par {} ({})", x.issuer, x.chain);
+        }
+        if let Some(n) = c.note.as_deref() {
+            println!("  {n}");
+        }
+    }
+}
+
 fn run(cli: Cli) -> Result<(), String> {
+    let keys = load_keys(&cli.keys)?;
     let out = |v: &dyn erased::Json| -> Result<(), String> {
         println!("{}", v.to_json().map_err(|e| e.to_string())?);
         Ok(())
@@ -405,7 +482,7 @@ fn run(cli: Cli) -> Result<(), String> {
             headers,
             path,
         } => {
-            let a = mf_engine::open(&file).map_err(|e| e.to_string())?;
+            let a = mf_engine::open_with(&file, &keys).map_err(|e| e.to_string())?;
             let m = mf_engine::descend(&a.message, &parse_path(&path)?)
                 .ok_or("--path : message embarqué introuvable")?;
             if cli.json {
@@ -453,13 +530,14 @@ fn run(cli: Cli) -> Result<(), String> {
             println!("Fichiers contenus ({})", m.attachments.len());
             print_attachments(m, 1);
             print_auth(m);
+            print_signatures(m);
             print_findings(m);
             print_route(m);
             print_urls(m, false);
             print_blocked(m);
         }
         Cmd::Headers { file, path } => {
-            let a = mf_engine::open(&file).map_err(|e| e.to_string())?;
+            let a = mf_engine::open_with(&file, &keys).map_err(|e| e.to_string())?;
             let m = mf_engine::descend(&a.message, &parse_path(&path)?)
                 .ok_or("--path : message embarqué introuvable")?;
             if cli.json {
@@ -468,7 +546,7 @@ fn run(cli: Cli) -> Result<(), String> {
             print_headers(m);
         }
         Cmd::Attachments { file } => {
-            let a = mf_engine::open(&file).map_err(|e| e.to_string())?;
+            let a = mf_engine::open_with(&file, &keys).map_err(|e| e.to_string())?;
             if cli.json {
                 return out(&a.message.attachments);
             }
@@ -490,7 +568,7 @@ fn run(cli: Cli) -> Result<(), String> {
                     "destination refusée : ne pas écrire dans le dossier de la preuve".into(),
                 );
             }
-            let a = mf_engine::open(&file).map_err(|e| e.to_string())?;
+            let a = mf_engine::open_with(&file, &keys).map_err(|e| e.to_string())?;
             let x = mf_engine::extract_attachment(&a.message, &parse_path(&path)?, index)
                 .map_err(|e| e.to_string())?;
             let dest = dir.join(&x.file_name);
@@ -513,10 +591,12 @@ fn run(cli: Cli) -> Result<(), String> {
         Cmd::Findings { files } => {
             let mut all = Vec::new();
             for f in files {
-                let a = mf_engine::open(&f).map_err(|e| format!("{}: {e}", f.display()))?;
+                let a =
+                    mf_engine::open_with(&f, &keys).map_err(|e| format!("{}: {e}", f.display()))?;
                 if !cli.json {
                     println!("== {}", f.display());
                     print_auth(&a.message);
+                    print_signatures(&a.message);
                     print_findings(&a.message);
                 }
                 all.push(serde_json::json!({ "file": f.display().to_string(), "findings": a.message.findings }));
@@ -532,7 +612,8 @@ fn run(cli: Cli) -> Result<(), String> {
         } => {
             let mut groups = Vec::new();
             for f in files {
-                let a = mf_engine::open(&f).map_err(|e| format!("{}: {e}", f.display()))?;
+                let a =
+                    mf_engine::open_with(&f, &keys).map_err(|e| format!("{}: {e}", f.display()))?;
                 groups.push(mf_report::IocGroup {
                     source: f.display().to_string(),
                     iocs: a.message.iocs,
@@ -571,7 +652,7 @@ fn run(cli: Cli) -> Result<(), String> {
             if dest.exists() {
                 return Err(format!("{} existe déjà", dest.display()));
             }
-            let a = mf_engine::open(&file).map_err(|e| e.to_string())?;
+            let a = mf_engine::open_with(&file, &keys).map_err(|e| e.to_string())?;
             let p = parse_path(&path)?;
             let m = mf_engine::descend(&a.message, &p)
                 .ok_or("--path : message embarqué introuvable")?;
@@ -591,7 +672,7 @@ fn run(cli: Cli) -> Result<(), String> {
             println!("{} ({} constat(s))", dest.display(), m.findings.len());
         }
         Cmd::Urls { file, path, defang } => {
-            let a = mf_engine::open(&file).map_err(|e| e.to_string())?;
+            let a = mf_engine::open_with(&file, &keys).map_err(|e| e.to_string())?;
             let m = mf_engine::descend(&a.message, &parse_path(&path)?)
                 .ok_or("--path : message embarqué introuvable")?;
             if cli.json {

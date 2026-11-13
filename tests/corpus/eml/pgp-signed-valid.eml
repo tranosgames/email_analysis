@@ -1,0 +1,35 @@
+Received: from mail.signed.example (mail.signed.example [198.51.100.20])
+	by mx.victim.example with ESMTPS id S1; Fri, 13 Nov 2026 10:00:00 +0000
+Authentication-Results: mx.victim.example; spf=pass smtp.mailfrom=signed.example
+From: Alice Martin <alice@signed.example>
+To: victim@victim.example
+Subject: Virement confirmé (PGP)
+Date: Fri, 13 Nov 2026 10:00:00 +0000
+Message-ID: <virement-6917299@signed.example>
+MIME-Version: 1.0
+Content-Type: multipart/signed; micalg=pgp-sha256;
+	protocol="application/pgp-signature"; boundary="SIG"
+
+--SIG
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Bonjour,
+
+Ci-joint la confirmation du virement de 1 250 € prévu le 20 novembre.
+
+Alice
+
+--SIG
+Content-Type: application/pgp-signature; name="signature.asc"
+Content-Description: OpenPGP digital signature
+
+-----BEGIN PGP SIGNATURE-----
+
+iIsEABYIADMWIQTmHO4wlKDs8/4HlqtiAX09al6PHgUCavcxKRUcYWxpY2VAc2ln
+bmVkLmV4YW1wbGUACgkQYgF9PWpejx4kGAD/akhLD1sVOA8fs+p4awvYYSN0DTFh
+XJXw5PO0160jgwIA/R8EPh1ha7diWhLtpnQusXWCPTm06zZPuI8rUyj+nk0E
+=oO7s
+-----END PGP SIGNATURE-----
+
+--SIG--

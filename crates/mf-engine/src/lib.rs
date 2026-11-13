@@ -5,6 +5,7 @@
 
 pub use mf_core::safe_file_name;
 use mf_core::{EngineError, Evidence, Format, Message};
+pub use mf_sig::{KeyEntry, Keyring, is_verification_link};
 use serde::Serialize;
 use std::path::Path;
 
@@ -17,12 +18,26 @@ pub struct Analyzed {
 
 /// Lit (lecture seule), hache, parse et analyse un fichier `.eml` ou `.msg`.
 pub fn open(path: &Path) -> Result<Analyzed, EngineError> {
+    open_with(path, &Keyring::default())
+}
+
+/// Comme [`open`], avec le trousseau de l'analyste (signatures PGP / S/MIME).
+pub fn open_with(path: &Path, keys: &Keyring) -> Result<Analyzed, EngineError> {
     let (evidence, bytes) = mf_core::read_evidence(path)?;
-    analyze_evidence(evidence, &bytes)
+    analyze_evidence(evidence, &bytes, keys)
 }
 
 /// Même traitement à partir d'octets déjà lus (version web). `name` sert d'étiquette de preuve.
 pub fn open_bytes(name: &str, bytes: Vec<u8>) -> Result<Analyzed, EngineError> {
+    open_bytes_with(name, bytes, &Keyring::default())
+}
+
+/// Comme [`open_bytes`], avec le trousseau de l'analyste.
+pub fn open_bytes_with(
+    name: &str,
+    bytes: Vec<u8>,
+    keys: &Keyring,
+) -> Result<Analyzed, EngineError> {
     if bytes.len() as u64 > mf_core::MAX_EVIDENCE_SIZE {
         return Err(EngineError::TooLarge {
             size: bytes.len() as u64,
@@ -30,10 +45,14 @@ pub fn open_bytes(name: &str, bytes: Vec<u8>) -> Result<Analyzed, EngineError> {
         });
     }
     let evidence = mf_core::evidence_from_bytes(name, &bytes);
-    analyze_evidence(evidence, &bytes)
+    analyze_evidence(evidence, &bytes, keys)
 }
 
-fn analyze_evidence(evidence: Evidence, bytes: &[u8]) -> Result<Analyzed, EngineError> {
+fn analyze_evidence(
+    evidence: Evidence,
+    bytes: &[u8],
+    keys: &Keyring,
+) -> Result<Analyzed, EngineError> {
     let mut message = match evidence.format {
         Format::Eml => mf_eml::parse(bytes, 0)?,
         Format::Msg => mf_msg::parse(bytes)?,
@@ -41,7 +60,7 @@ fn analyze_evidence(evidence: Evidence, bytes: &[u8]) -> Result<Analyzed, Engine
         Format::Unknown => return Err(EngineError::UnknownFormat),
     };
     expand_attached_messages(&mut message, 0);
-    mf_analysis::analyze(&mut message);
+    mf_analysis::analyze_with(&mut message, keys);
     Ok(Analyzed { evidence, message })
 }
 

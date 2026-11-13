@@ -5,6 +5,7 @@ members = [
     "crates/mf-eml",
     "crates/mf-msg",
     "crates/mf-analysis",
+    "crates/mf-sig",
     "crates/mf-engine",
     "crates/mf-cli",
     "crates/mf-report",
@@ -17,6 +18,7 @@ default-members = [
     "crates/mf-eml",
     "crates/mf-msg",
     "crates/mf-analysis",
+    "crates/mf-sig",
     "crates/mf-engine",
     "crates/mf-report",
     "crates/mf-cli",
@@ -36,6 +38,7 @@ mf-msg = { path = "crates/mf-msg" }
 mf-analysis = { path = "crates/mf-analysis" }
 mf-engine = { path = "crates/mf-engine" }
 mf-report = { path = "crates/mf-report" }
+mf-sig = { path = "crates/mf-sig" }
 mail-parser = { version = "0.11", features = ["full_encoding"] }
 cfb = "0.15"
 encoding_rs = "0.8"

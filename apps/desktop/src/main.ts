@@ -6,7 +6,7 @@ initTheme();
 import { FileHandler } from "./FileHandler";
 import { MessageHandler } from "./MessageHandler";
 import { UIManager } from "./UIManager";
-import { warmUp } from "./ipc";
+import { restoreKeys, warmUp } from "./ipc";
 
 const state = new MessageHandler();
 const ui = new UIManager(state);
@@ -52,7 +52,22 @@ if (footer) {
   all.title = "Exporter en CSV les indicateurs de tous les messages chargés";
   all.addEventListener("click", () => void ui.exportAllIocs("csv"));
   footer.append(all);
+  // FR-049/050 : trousseau de l'analyste (clés PGP, certificats).
+  const keys = document.createElement("button");
+  keys.type = "button";
+  keys.className = "btn keys-button";
+  keys.textContent = "Clés et certificats";
+  keys.title = "Clés publiques PGP et certificats pour vérifier les signatures";
+  keys.addEventListener("click", () => void ui.openKeyDialog());
+  footer.append(keys);
+  ui.keyButton = keys;
   mountThemeToggle(footer);
 }
 void ui.render();
-void files.init();
+// Le trousseau mémorisé est réimporté avant toute analyse (les fichiers ouverts au lancement en profitent).
+void restoreKeys()
+  .catch(() => undefined)
+  .then(() => {
+    void ui.updateKeyButton();
+    return files.init();
+  });

@@ -9,6 +9,13 @@ import {
   saveAttachment,
   saveText,
   VERDICT_LABEL,
+  clearKeys,
+  importKeyFiles,
+  listKeys,
+  openVerificationLink,
+  reanalyzeAll,
+  removeKey,
+  type KeyEntry,
   type Attachment,
   type IocGroup,
   type Message,
@@ -142,6 +149,9 @@ export class UIManager {
         onReport: (format) => void this.report(root, s.selectedId, [...s.path], format),
         onExportIocs: (format) => void this.exportIocs([{ source: this.source(root, s.path), iocs: message.iocs }], format, root),
         onGoToDepth: (d) => s.goToDepth(d),
+        onImportKeys: () => void this.importKeys(),
+        onExternalLink: (l) => void openVerificationLink(l),
+        onSaveCert: (pem, name) => void saveText(pem, name, "application/x-pem-file").then((n) => n && toast(`Certificat enregistré : ${n}`)),
       }),
     );
     [this.reading, ...this.reading.querySelectorAll<HTMLElement>(".reading-main, .inventory")].forEach((el, i) => (el.scrollTop = scrolls[i] ?? 0));
@@ -204,6 +214,124 @@ export class UIManager {
   }
 
   /** FR-038 : boîte de confirmation, puis enregistrement de la pièce jointe. */
+  // ——— Trousseau (FR-049 à FR-051) ———
+
+  /** Sélection de fichiers de clés (même code bureau et web : les octets sont lus ici). */
+  private pickKeyFiles(): Promise<File[]> {
+    return new Promise((resolve) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.multiple = true;
+      input.accept = ".asc,.gpg,.pgp,.pem,.cer,.crt,.der,.key";
+      input.addEventListener("change", () => resolve([...(input.files ?? [])]));
+      input.addEventListener("cancel", () => resolve([]));
+      input.click();
+    });
+  }
+
+  async importKeys(files?: File[]): Promise<void> {
+    const picked = files ?? (await this.pickKeyFiles());
+    if (!picked.length) return;
+    const { added, errors } = await importKeyFiles(picked);
+    if (errors.length) toast(errors.join(" — "));
+    if (added.length) {
+      toast(`${added.length} clé(s) ou certificat(s) importé(s) : nouvelle analyse…`);
+      await this.reanalyze();
+    }
+    if (this.keyDialog?.open) await this.fillKeyDialog();
+  }
+
+  /** Nouvelle analyse de toutes les preuves avec le trousseau à jour. */
+  async reanalyze(): Promise<void> {
+    const summaries = await reanalyzeAll();
+    this.cache.clear();
+    this.lastKey = "";
+    this.state.replaceItems(summaries);
+    this.updateKeyButton();
+  }
+
+  private keyDialog: HTMLDialogElement | null = null;
+  keyButton: HTMLButtonElement | null = null;
+
+  async updateKeyButton(): Promise<void> {
+    if (!this.keyButton) return;
+    const n = (await listKeys()).length;
+    this.keyButton.textContent = n ? `Clés et certificats (${n})` : "Clés et certificats";
+  }
+
+  async openKeyDialog(): Promise<void> {
+    if (!this.keyDialog) {
+      this.keyDialog = h("dialog", { class: "key-dialog", "aria-label": "Clés et certificats" }) as HTMLDialogElement;
+      document.body.append(this.keyDialog);
+    }
+    await this.fillKeyDialog();
+    this.keyDialog.showModal();
+  }
+
+  private async fillKeyDialog(): Promise<void> {
+    const d = this.keyDialog;
+    if (!d) return;
+    const keys: KeyEntry[] = await listKeys();
+    const close = () => d.close();
+    d.replaceChildren(
+      h("h2", {}, "Clés et certificats"),
+      h(
+        "p",
+        { class: "muted-label" },
+        "Clés publiques PGP (.asc, .gpg) et certificats X.509 (.pem, .cer, .crt) utilisés pour vérifier les signatures. Ils restent sur ce poste et ne sont jamais envoyés.",
+      ),
+      keys.length
+        ? h(
+            "ul",
+            { class: "key-list" },
+            ...keys.map((k) =>
+              h(
+                "li",
+                {},
+                h("span", { class: "key-kind" }, k.kind === "pgp" ? "PGP" : "X.509"),
+                h("div", {}, h("div", { class: "key-label" }, k.label), h("div", { class: "fp" }, k.fingerprint.replace(/(.{4})/g, "$1 ").trim()), h("div", { class: "muted-label" }, k.source)),
+                h(
+                  "button",
+                  {
+                    class: "btn btn-small",
+                    type: "button",
+                    onclick: async () => {
+                      await removeKey(k.fingerprint);
+                      await this.reanalyze();
+                      await this.fillKeyDialog();
+                    },
+                  },
+                  "Retirer",
+                ),
+              ),
+            ),
+          )
+        : h("p", { class: "none" }, "Aucune clé importée."),
+      h(
+        "div",
+        { class: "file-actions" },
+        h("button", { class: "btn key-import", type: "button", onclick: () => void this.importKeys() }, "Importer…"),
+        keys.length
+          ? h(
+              "button",
+              {
+                class: "btn",
+                type: "button",
+                onclick: async () => {
+                  await clearKeys();
+                  await this.reanalyze();
+                  await this.fillKeyDialog();
+                },
+              },
+              "Tout effacer",
+            )
+          : null,
+        h("span", { class: "spacer" }),
+        h("button", { class: "btn key-close", type: "button", onclick: close }, "Fermer"),
+      ),
+    );
+  }
+
   private async download(evidencePath: string, id: number | null, path: number[], att: Attachment): Promise<void> {
     if (id === null) return;
     const source = evidencePath.split(/[\\/]/).pop() ?? evidencePath;

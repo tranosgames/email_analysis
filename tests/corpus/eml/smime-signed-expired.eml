@@ -1,0 +1,47 @@
+Received: from mail.signed.example (mail.signed.example [198.51.100.20])
+	by mx.victim.example with ESMTPS id S1; Fri, 13 Nov 2026 10:00:00 +0000
+Authentication-Results: mx.victim.example; spf=pass smtp.mailfrom=signed.example
+From: Erin Petit <erin@signed.example>
+To: victim@victim.example
+Subject: Certificat expiré (S/MIME)
+Date: Fri, 13 Nov 2026 10:00:00 +0000
+Message-ID: <certificat-39340889@signed.example>
+MIME-Version: 1.0
+Content-Type: multipart/signed; protocol="application/pkcs7-signature";
+	micalg=sha-256; boundary="SMIME"
+
+--SMIME
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+Bonjour,
+
+Ci-joint la confirmation du virement de 1 250 € prévu le 20 novembre.
+
+Alice
+
+--SMIME
+Content-Type: application/pkcs7-signature; name="smime.p7s"
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="smime.p7s"
+
+MIIEBwYJKoZIhvcNAQcCoIID+DCCA/QCAQExDzANBglghkgBZQMEAgEFADALBgkqhkiG9w0BBwGg
+ggJqMIICZjCCAU6gAwIBAgIUBHA93kRG+4VSK6H0SlJVkaRh7qIwDQYJKoZIhvcNAQELBQAwOTEe
+MBwGA1UEAwwVTWFpbEZvcmVuc2ljcyBUZXN0IENBMRcwFQYDVQQKDA5Db3JwdXMgZGUgdGVzdDAe
+Fw0yMDAxMDEwMDAwMDBaFw0yMTAxMDEwMDAwMDBaMDMxDTALBgNVBAMMBEVyaW4xIjAgBgkqhkiG
+9w0BCQEWE2VyaW5Ac2lnbmVkLmV4YW1wbGUwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQoaMjX
+jx7CHWBc3vF+iss/5WBrGblCjPIh2ccRePRWqEgDLTCVoNkVI8AgseP1Z0StXleq/G1EU7ZoBejr
+PHuTozcwNTAeBgNVHREEFzAVgRNlcmluQHNpZ25lZC5leGFtcGxlMBMGA1UdJQQMMAoGCCsGAQUF
+BwMEMA0GCSqGSIb3DQEBCwUAA4IBAQCrF2a2F54Ng8JHU2E5uv7EhZCOQ3rhxozUh9q8oantEEaa
+ho+4kcx3At351f6OQphr3cinBUqYSDbXXgJoeE9JpxF/jJf8SLltXquhbS4qtLTj+l59RCXeC2by
+WImWf/+szVO2V72/NIz4qTh51KxqlwCSTG2nhBLdTkiOfKBxOAv9wwhecG7j3661chanvFyy17mC
+MrSQ58iwQkauWNG/jrwxQDCB2KaPtX931MS7FW+EhB+Bab93ToMhTCY0bGvZGMyK4y3cuOpdDkn9
+w9zSXUq+unVlbM/rHsYrkvVQZfYvhFSxkdoBOvnKmv1haJDMDKK6U7tc/93qyY8ka/1+MYIBYTCC
+AV0CAQEwUTA5MR4wHAYDVQQDDBVNYWlsRm9yZW5zaWNzIFRlc3QgQ0ExFzAVBgNVBAoMDkNvcnB1
+cyBkZSB0ZXN0AhQEcD3eREb7hVIrofRKUlWRpGHuojANBglghkgBZQMEAgEFAKCBoTAYBgkqhkiG
+9w0BCQMxCwYJKoZIhvcNAQcBMBwGCSqGSIb3DQEJBTEPFw0yNjExMTMxNTQ3NTNaMC8GCSqGSIb3
+DQEJBDEiBCC9nZ3JbCuVJbA1KoKnG80snj/r7IE/tRCC7YfxR1gCTzA2BgkqhkiG9w0BCQ8xKTAn
+MAsGCWCGSAFlAwQBKjALBglghkgBZQMEARYwCwYJYIZIAWUDBAECMAoGCCqGSM49BAMCBEYwRAIg
+TrsDBoCqwqvj9tfPZT4D9e0P3BJGx9WEt/+17PIK2NQCIAzOa6sYEJPxYswC62IZSq8bs7MWXvGt
+YJ5HdKPUol/n
+--SMIME--

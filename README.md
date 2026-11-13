@@ -28,7 +28,7 @@ Le projet est structuré avec [spec-kit](https://github.com/github/spec-kit) (Sp
 specs/
 ├── 001-email-forensic-viewer/   # feature active (.specify/feature.json)
 └── 002-pst-support/
-crates/                   # moteur Rust : mf-core, mf-eml, mf-msg, mf-analysis, mf-engine, mf-cli
+crates/                   # moteur Rust : mf-core, mf-eml, mf-msg, mf-analysis, mf-sig (PGP/S/MIME), mf-engine, mf-report, mf-cli
 apps/desktop/             # interface TypeScript (src/) partagée : application Tauri 2 (src-tauri/) et version web
 crates/mf-wasm/           # moteur compilé en WebAssembly pour la version web
 tests/corpus/             # EML/MSG de référence (voir son README)
@@ -37,6 +37,7 @@ spikes/crate-validation/  # prototype Phase 0 : valide mail-parser, cfb, msg_par
 
 ## Pile technique (voir `specs/001-email-forensic-viewer/research.md`)
 
+- Signatures : `pgp` (rPGP) et RustCrypto `cms` / `x509-cert` / `rsa` / `p256` / `p384`, 100 % Rust, aussi en WebAssembly
 - EML : `mail-parser` · MSG : `cfb` + couche MAPI maison (oracle de test : `msg_parser`) · PST : `outlook-pst` (Microsoft, lecture seule)
 - UI : Tauri 2 + TypeScript vanilla + CSS natif, polices embarquées (même découpage que msg-reader : `FileHandler`, `MessageHandler`, `UIManager`)
 - CLI `mf` pour l'automatisation et la contre-vérification
@@ -71,6 +72,12 @@ Déposez des `.eml` / `.msg` (ou un dossier) dans la fenêtre. Pour chaque messa
 - **QR codes** : les images (pièces jointes, images `cid:` et `data:` du HTML) sont scannées ; l'URL d'un QR code est ajoutée à la liste et analysée (quishing). Mémoire bornée : images de plus de 8 Mo ou 8000 px ignorées, 40 images par message au plus.
 - **Pièces jointes HTML / SVG** : sans rien exécuter, l'outil y cherche le faux formulaire (champ mot de passe, adresse d'envoi), l'exfiltration (bot Telegram, webhook Discord, Formspree…), l'obfuscation (`eval`, `atob` — les charges base64 sont décodées et analysées à leur tour), les redirections automatiques et l'adresse du destinataire intégrée à la page.
 - **Liens de redirection** : la vraie destination est décodée **sans suivre le lien** pour Microsoft Safe Links, Proofpoint, Google, Bing, Facebook, YouTube, LinkedIn et les paramètres `url=`/`redirect=`… ; un redirecteur public détourné est signalé, une réécriture de sécurité simplement décodée.
+- **Signatures PGP et S/MIME** (au-dessus de l'analyse) : PGP/MIME, PGP en clair, S/MIME détaché ou opaque (`.p7m`, y compris celui d'un message Outlook). La signature est vérifiée **sur les octets exacts** de la partie signée :
+  - *valide* (contenu intact), *invalide* (contenu modifié), *clé inconnue*, clé ou certificat *expiré* à la date de signature, clé *révoquée*, signataire ≠ expéditeur ;
+  - S/MIME : le certificat joint suffit à prouver l'intégrité ; l'identité n'est confirmée que si le certificat de l'autorité a été importé ;
+  - **Clés et certificats** (bas de la liste) : importez les clés publiques PGP (`.asc`, `.gpg`) et certificats (`.pem`, `.cer`, `.crt`). Ils restent sur le poste, sont réimportés au démarrage, et les messages ouverts sont aussitôt ré-analysés ;
+  - **Vérifier en ligne ↗** : keys.openpgp.org (empreinte, adresse), keyserver.ubuntu.com, Keyoxide, WKD du domaine (adresse calculée hors-ligne). Chaque lien demande confirmation : c'est la seule sortie du cadre hors-ligne, et elle est volontaire. L'application de bureau n'ouvre que ces services ;
+  - une signature valide au nom de l'expéditeur (clé importée, ou certificat d'une autorité importée) suffit à rendre le verdict « Légitime » ; une signature invalide ou d'un autre signataire est une alerte grave.
 - **Pièces jointes dangereuses** : type réel reconnu par signature (PE, ELF, LNK, OLE, ZIP/OOXML, ISO, RAR, 7z…) comparé à l'extension et au type déclaré ; exécutables, double extension, caractères de direction Unicode, archives chiffrées, documents à macros, pièces HTML, TNEF.
 - **Indicateurs** (sous les URL) : adresses, domaines, IP publiques, URL et empreintes des pièces jointes, dédoublonnés et défangés ; **Copier (défangés)**, **Exporter CSV / JSON** pour le message, **Télécharger tous les indicateurs** en bas de la liste pour tous les messages chargés.
 - **Rapport** (à droite du bouton des en-têtes) : **HTML (imprimable)** — document autonome, sans aucune ressource externe, à imprimer en PDF depuis le navigateur — ou **JSON** (schéma versionné). Il reprend preuve et empreintes, constats, authentification, acheminement, pièces jointes, URL et indicateurs défangés, et l'annexe des en-têtes.
@@ -104,6 +111,7 @@ cargo build --release
 ./target/release/mf findings *.eml                    # authentification + constats
 ./target/release/mf iocs *.eml *.msg --format csv --defang > indicateurs.csv
 ./target/release/mf report suspect.eml --out rapport.html      # ou --format json
+./target/release/mf show signe.eml --keys ./cles/              # vérifie PGP / S/MIME avec vos clés et autorités
 ```
 
 **Tests** : `cargo test` (tests unitaires et corpus, concordance avec `msg_parser`, parité fichier / octets) et `npm run test:web`.

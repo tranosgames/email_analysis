@@ -19,3 +19,4 @@ sha1.workspace = true
 image.workspace = true
 rqrr.workspace = true
 percent-encoding.workspace = true
+mf-sig.workspace = true

@@ -1,0 +1,25 @@
+[package]
+name = "mf-sig"
+description = "Vérification hors-ligne des signatures OpenPGP et S/MIME (FR-049, FR-050)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+pgp = { version = "0.21", default-features = false }
+cms = "=0.3.0-rc.2"
+x509-cert = "0.3"
+der = { version = "0.8", features = ["alloc", "oid"] }
+spki = "0.8"
+const-oid = { version = "0.10", features = ["db"] }
+rsa = { version = "0.10", features = ["pkcs1v15"] }
+p256 = { version = "0.14", features = ["ecdsa"] }
+p384 = { version = "0.14", features = ["ecdsa"] }
+ecdsa = { version = "0.17", features = ["der"] }
+sha1 = "0.11"
+sha2 = "0.11"
+base64.workspace = true
+serde.workspace = true
+chrono.workspace = true
+mf-core.workspace = true

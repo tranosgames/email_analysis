@@ -2,7 +2,7 @@
 // corps sûr, et colonne d'inventaire « Fichiers contenus » (FR-036) + « URL » (FR-037).
 
 import { h, humanSize, toast } from "../dom";
-import type { Address, Attachment, HtmlAttachmentReport, AuthResult, BlockedKind, BlockedResource, Endpoint, Finding, Header, Hop, Ioc, IocKind, IpScope, MailRoute, Message, MessageView, Severity, SourceRef, UrlEntry, UrlLocation, Verdict } from "../ipc";
+import type { Address, Attachment, CertInfo, ExternalLink, HtmlAttachmentReport, SignatureCheck, SignatureStatus, AuthResult, BlockedKind, BlockedResource, Endpoint, Finding, Header, Hop, Ioc, IocKind, IpScope, MailRoute, Message, MessageView, Severity, SourceRef, UrlEntry, UrlLocation, Verdict } from "../ipc";
 import { VERDICT_LABEL } from "../ipc";
 
 export interface ReadingActions {
@@ -17,6 +17,12 @@ export interface ReadingActions {
   /** FR-023 : export des indicateurs du message affiché. */
   onExportIocs: (format: "csv" | "json") => void;
   onGoToDepth: (depth: number) => void;
+  /** FR-049/050 : importer des clés publiques ou certificats, puis ré-analyser. */
+  onImportKeys: () => void;
+  /** FR-051 : lien de vérification externe (confirmation préalable). */
+  onExternalLink: (link: ExternalLink) => void;
+  /** Exporte le certificat du signataire S/MIME. */
+  onSaveCert: (pem: string, name: string) => void;
 }
 
 /** Fil d'Ariane : noms des PJ traversées, fournis par l'appelant. */
@@ -35,6 +41,7 @@ export function renderReading(view: MessageView, crumbs: Crumb[], a: ReadingActi
   main.append(envelope(view));
   if (m.issues.length) main.append(h("ul", { class: "issues" }, ...m.issues.map((i) => h("li", {}, i))));
   if (m.verdict) main.append(verdictBanner(m.verdict));
+  if (m.signatures.length) main.append(signatureSection(m.signatures, a));
   main.append(analysisSection(m, a));
 
   // FR-035 — bouton « Afficher / Masquer les en-têtes »
@@ -932,6 +939,103 @@ function authChip(label: string, r: AuthResult | undefined): HTMLElement {
 
 function verdictOf(m: Message, method: string): AuthResult | undefined {
   return m.auth.find((x) => x.method === method && x.most_recent) ?? m.auth.find((x) => x.method === method && !x.header_name.startsWith("ARC"));
+}
+
+// ——— Signatures PGP / S/MIME (FR-049 à FR-051) ———
+
+const SIG_STATUS: Record<SignatureStatus, [string, string]> = {
+  valid: ["Signature valide", "good"],
+  invalid: ["Signature invalide", "bad"],
+  unknown_key: ["Clé inconnue", "warn"],
+  encrypted: ["Message chiffré", "neutral"],
+  unsupported: ["Non vérifiable", "warn"],
+};
+
+const SIG_KIND: Record<string, string> = {
+  pgp_mime: "PGP/MIME",
+  pgp_inline: "PGP en clair (inline)",
+  pgp_encrypted: "PGP chiffré",
+  smime_detached: "S/MIME (signature détachée)",
+  smime_opaque: "S/MIME (signature opaque .p7m)",
+  smime_encrypted: "S/MIME chiffré",
+};
+
+const CHAIN_LABEL: Record<CertInfo["chain"], string> = {
+  trusted: "rattaché à une autorité importée",
+  unknown_ca: "autorité non importée : identité non confirmée",
+  self_signed: "certificat auto-signé : identité non confirmée",
+  invalid_chain: "chaîne de certificats invalide",
+};
+
+/** Empreinte lisible : groupes de 4 caractères. */
+function groupHex(fp: string): string {
+  return fp.replace(/(.{4})/g, "$1 ").trim();
+}
+
+function signatureSection(sigs: SignatureCheck[], a: ReadingActions): HTMLElement {
+  const sec = h("section", { class: "signatures", "aria-label": "Signatures" });
+  for (const c of sigs) {
+    const [label, tone] = SIG_STATUS[c.status];
+    const rows: [string, HTMLElement | string, string?][] = [];
+    if (c.signer_ids.length) rows.push(["Signataire", c.signer_ids.join(" ; ")]);
+    if (c.matches_from !== null)
+      rows.push(["Expéditeur", c.matches_from ? "correspond à l'email de la clé" : `ne correspond pas (${c.signer_emails.join(", ")})`, c.matches_from ? "good" : "bad"]);
+    if (c.fingerprint)
+      rows.push([
+        c.scheme === "pgp" ? "Empreinte" : "SHA-256 du certificat",
+        h("span", { class: "fp", title: "Comparez l'empreinte complète avec une source sûre" }, groupHex(c.fingerprint)),
+      ]);
+    if (c.signed_at) rows.push(["Signée le", `${c.signed_at.replace("T", " ").replace("Z", "")} UTC`]);
+    const algos = [c.key_algorithm, c.hash_algorithm].filter(Boolean).join(" / ");
+    if (algos) rows.push(["Algorithmes", algos]);
+    if (c.key_expired) rows.push(["Validité", "clé ou certificat expiré à la date de signature", "bad"]);
+    if (c.key_revoked) rows.push(["Révocation", "clé révoquée par son propriétaire", "bad"]);
+    if (c.cert) {
+      rows.push(["Émis par", c.cert.issuer]);
+      rows.push(["Valable", `${c.cert.not_before?.slice(0, 10) ?? "?"} → ${c.cert.not_after?.slice(0, 10) ?? "?"}`]);
+      rows.push(["Confiance", CHAIN_LABEL[c.cert.chain], c.cert.chain === "trusted" ? "good" : "warn"]);
+    }
+    if (c.verified_with && c.status === "valid") rows.push(["Vérifiée avec", c.verified_with]);
+    const actions: HTMLElement[] = [];
+    if (c.status === "unknown_key" || (c.cert && c.cert.chain !== "trusted"))
+      actions.push(h("button", { class: "btn btn-small import-keys", type: "button", onclick: a.onImportKeys }, c.cert ? "Importer le certificat de l'autorité…" : "Importer la clé…"));
+    if (c.cert) {
+      const cert = c.cert;
+      actions.push(
+        h("button", { class: "btn btn-small", type: "button", onclick: () => a.onSaveCert(cert.pem, `${(cert.emails[0] ?? "certificat").replace(/[^a-z0-9@._-]/gi, "_")}.pem`) }, "Exporter le certificat (.pem)"),
+      );
+    }
+    if (c.fingerprint && c.scheme === "pgp")
+      actions.push(h("button", { class: "btn btn-small", type: "button", onclick: () => void copyText(c.fingerprint ?? "", "Empreinte") }, "Copier l'empreinte"));
+    sec.append(
+      h(
+        "div",
+        { class: `sig sig-${tone}` },
+        h("div", { class: "sig-head" }, h("span", { class: `sig-status ${tone}` }, label), h("span", { class: "sig-kind" }, SIG_KIND[c.kind] ?? c.kind)),
+        rows.length ? h("dl", { class: "sig-details" }, ...rows.flatMap(([k, v, t]) => [h("dt", {}, k), h("dd", { class: t ?? "" }, v)])) : null,
+        c.note ? h("p", { class: "sig-note" }, c.note) : null,
+        actions.length ? h("div", { class: "file-actions" }, ...actions) : null,
+        c.links.length
+          ? h(
+              "div",
+              { class: "sig-links" },
+              h("span", { class: "muted-label", title: "Ouvre le service dans le navigateur, après confirmation : sort du cadre hors-ligne" }, "Vérifier en ligne ↗"),
+              ...c.links.map((l) => h("button", { class: "btn btn-small ext-link", type: "button", title: l.url, onclick: () => a.onExternalLink(l) }, l.label)),
+            )
+          : null,
+      ),
+    );
+  }
+  return sec;
+}
+
+async function copyText(text: string, what: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(`${what} copiée`);
+  } catch {
+    toast("Copie impossible");
+  }
 }
 
 /** FR-045 — verdict de synthèse, toujours visible (même analyse repliée). */

@@ -133,6 +133,56 @@ export interface DkimCheck {
 
 export type IocKind = "ipv4" | "ipv6" | "domain" | "url" | "email" | "sha256" | "md5";
 
+export type SignatureStatus = "valid" | "invalid" | "unknown_key" | "encrypted" | "unsupported";
+
+export interface CertInfo {
+  subject: string;
+  issuer: string;
+  serial: string;
+  not_before: string | null;
+  not_after: string | null;
+  emails: string[];
+  sha256: string;
+  pem: string;
+  valid_at_signing: boolean;
+  chain: "trusted" | "unknown_ca" | "self_signed" | "invalid_chain";
+  trusted_by: string | null;
+}
+
+export interface ExternalLink {
+  label: string;
+  url: string;
+}
+
+/** Signature PGP / S/MIME vérifiée hors-ligne (FR-049, FR-050). */
+export interface SignatureCheck {
+  scheme: "pgp" | "smime";
+  kind: string;
+  status: SignatureStatus;
+  fingerprint: string | null;
+  key_id: string | null;
+  signer_ids: string[];
+  signer_emails: string[];
+  matches_from: boolean | null;
+  signed_at: string | null;
+  hash_algorithm: string | null;
+  key_algorithm: string | null;
+  key_expired: boolean | null;
+  key_revoked: boolean | null;
+  cert: CertInfo | null;
+  verified_with: string | null;
+  note: string | null;
+  links: ExternalLink[];
+}
+
+/** Entrée du trousseau local de l'analyste. */
+export interface KeyEntry {
+  kind: "pgp" | "x509";
+  fingerprint: string;
+  label: string;
+  source: string;
+}
+
 export type VerdictLevel = "legitimate" | "suspicious" | "malicious";
 
 export interface Verdict {
@@ -222,6 +272,8 @@ export interface Message {
   iocs: Ioc[];
   /** Verdict de synthèse (FR-045). */
   verdict: Verdict | null;
+  /** Signatures PGP / S/MIME (FR-049, FR-050). */
+  signatures: SignatureCheck[];
   /** « html » : corps HTML d'origine ; « rtf » : HTML reconstitué depuis le RTF Outlook (FR-041). */
   html_source: "html" | "rtf" | null;
   attachments: Attachment[];
@@ -449,10 +501,10 @@ export async function saveText(content: string, filename: string, mime: string):
 }
 
 /** Boîte de confirmation système : `ask` natif (bureau) ou `window.confirm` (web). */
-export async function confirmBox(message: string, title: string): Promise<boolean> {
+export async function confirmBox(message: string, title: string, okLabel = "Télécharger"): Promise<boolean> {
   if (!inTauri) return window.confirm(`${title}\n\n${message}`);
   const { ask: nativeAsk } = await import("@tauri-apps/plugin-dialog");
-  return nativeAsk(message, { title, kind: "warning", okLabel: "Télécharger", cancelLabel: "Annuler" });
+  return nativeAsk(message, { title, kind: "warning", okLabel, cancelLabel: "Annuler" });
 }
 
 /**
@@ -493,4 +545,140 @@ export async function pickPaths(directory: boolean): Promise<string[]> {
   });
   if (!picked) return [];
   return Array.isArray(picked) ? picked : [picked];
+}
+
+// ——— Trousseau de l'analyste : clés PGP et certificats (FR-049 à FR-051) ———
+
+/** Fichiers de clés importés, mémorisés sur ce poste (navigateur ou application) et réimportés au
+ *  démarrage. Les clés publiques ne sont pas secrètes ; rien n'est envoyé sur le réseau. */
+const KEY_STORE = "mf.keyring.v1";
+
+interface StoredKeys {
+  files: { name: string; b64: string }[];
+  removed: string[];
+}
+
+function loadStore(): StoredKeys {
+  try {
+    const v = JSON.parse(localStorage.getItem(KEY_STORE) ?? "null") as StoredKeys | null;
+    if (v && Array.isArray(v.files) && Array.isArray(v.removed)) return v;
+  } catch {
+    /* stockage indisponible ou illisible */
+  }
+  return { files: [], removed: [] };
+}
+
+function saveStore(v: StoredKeys): void {
+  try {
+    localStorage.setItem(KEY_STORE, JSON.stringify(v));
+  } catch {
+    /* navigation privée : le trousseau ne vit que pour la session */
+  }
+}
+
+function toB64(bytes: Uint8Array): string {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+function fromB64(b64: string): Uint8Array {
+  const s = atob(b64);
+  const out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+  return out;
+}
+
+async function backendImport(name: string, bytes: Uint8Array): Promise<KeyEntry[]> {
+  if (inTauri) return invoke<KeyEntry[]>("import_key", { name, data: Array.from(bytes) });
+  const buf = bytes.slice().buffer as ArrayBuffer;
+  const r = await ask({ kind: "key-import", name, bytes: buf }, [buf]);
+  if (!r.ok || r.text === undefined) throw new Error(r.error ?? "import impossible");
+  return JSON.parse(r.text) as KeyEntry[];
+}
+
+async function backendRemove(fingerprint: string): Promise<void> {
+  if (inTauri) await invoke("remove_key", { fingerprint });
+  else await ask({ kind: "key-remove", fingerprint });
+}
+
+export async function listKeys(): Promise<KeyEntry[]> {
+  if (inTauri) return invoke<KeyEntry[]>("list_keys");
+  const r = await ask({ kind: "key-list" });
+  return JSON.parse(r.text ?? "[]") as KeyEntry[];
+}
+
+/** Réimporte le trousseau mémorisé (au démarrage, avant toute analyse). */
+export async function restoreKeys(): Promise<void> {
+  const store = loadStore();
+  for (const f of store.files) {
+    try {
+      await backendImport(f.name, fromB64(f.b64));
+    } catch {
+      /* fichier devenu illisible : ignoré */
+    }
+  }
+  for (const fp of store.removed) await backendRemove(fp);
+}
+
+/** Importe des fichiers de clés ; retourne les entrées ajoutées et les erreurs par fichier. */
+export async function importKeyFiles(files: File[]): Promise<{ added: KeyEntry[]; errors: string[] }> {
+  const store = loadStore();
+  const added: KeyEntry[] = [];
+  const errors: string[] = [];
+  for (const file of files) {
+    if (file.size > 1024 * 1024) {
+      errors.push(`${file.name} : fichier trop volumineux pour une clé (1 Mo max.)`);
+      continue;
+    }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    try {
+      const entries = await backendImport(file.name, bytes);
+      added.push(...entries);
+      const b64 = toB64(bytes);
+      if (!store.files.some((f) => f.b64 === b64)) store.files.push({ name: file.name, b64 });
+      store.removed = store.removed.filter((fp) => !entries.some((e) => e.fingerprint === fp));
+    } catch (e) {
+      errors.push(`${file.name} : ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  saveStore(store);
+  return { added, errors };
+}
+
+export async function removeKey(fingerprint: string): Promise<void> {
+  await backendRemove(fingerprint);
+  const store = loadStore();
+  if (!store.removed.includes(fingerprint)) store.removed.push(fingerprint);
+  saveStore(store);
+}
+
+export async function clearKeys(): Promise<void> {
+  for (const k of await listKeys()) await backendRemove(k.fingerprint);
+  saveStore({ files: [], removed: [] });
+}
+
+/** Ré-analyse toutes les preuves ouvertes avec le trousseau à jour ; retourne les résumés. */
+export async function reanalyzeAll(): Promise<Summary[]> {
+  if (inTauri) return invoke<Summary[]>("reanalyze_all");
+  const out: Summary[] = [];
+  for (let i = 0; i < webViews.length; i++) {
+    const r = await ask({ kind: "reanalyze", key: webKeys[i] });
+    if (r.ok && r.view) webViews[i] = r.view;
+    out.push(summarize(i, webViews[i]));
+  }
+  return out;
+}
+
+/** FR-051 : ouvre un lien de vérification externe, seulement après confirmation explicite. */
+export async function openVerificationLink(link: ExternalLink): Promise<boolean> {
+  const ok = await confirmBox(
+    `Ouvrir ${link.label} dans le navigateur ?\n\n${link.url}\n\nCette consultation sort du cadre hors-ligne : le service consulté saura qu'on recherche cette clé ou cette adresse.`,
+    "Vérification externe",
+    "Ouvrir",
+  );
+  if (!ok) return false;
+  if (inTauri) await invoke("open_verification_link", { url: link.url });
+  else window.open(link.url, "_blank", "noopener,noreferrer");
+  return true;
 }

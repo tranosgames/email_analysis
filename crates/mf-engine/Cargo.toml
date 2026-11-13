@@ -8,6 +8,7 @@ license.workspace = true
 
 [dependencies]
 mf-core.workspace = true
+mf-sig.workspace = true
 mf-eml.workspace = true
 mf-msg.workspace = true
 mf-analysis.workspace = true

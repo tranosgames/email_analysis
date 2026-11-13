@@ -1,0 +1,27 @@
+Received: from mail.signed.example (mail.signed.example [198.51.100.20])
+	by mx.victim.example with ESMTPS id S1; Fri, 13 Nov 2026 10:00:00 +0000
+Authentication-Results: mx.victim.example; spf=pass smtp.mailfrom=signed.example
+From: Alice Martin <alice@signed.example>
+To: victim@victim.example
+Subject: Message en clair (PGP inline)
+Date: Fri, 13 Nov 2026 10:00:00 +0000
+Message-ID: <message-29219069@signed.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+Bonjour,
+
+Message signé en clair (PGP inline).
+
+Alice
+-----BEGIN PGP SIGNATURE-----
+
+iIsEARYIADMWIQTmHO4wlKDs8/4HlqtiAX09al6PHgUCavcxKRUcYWxpY2VAc2ln
+bmVkLmV4YW1wbGUACgkQYgF9PWpejx7e9AD/Y7eJtCpIGC40VlAp1mAxeEEuM+7E
+/0Ohfyzfvx6ryxYA/R1h1fcJ/I83bsikzLCK2/lZEXsR7JanFFgFs/CLXDwK
+=9scb
+-----END PGP SIGNATURE-----

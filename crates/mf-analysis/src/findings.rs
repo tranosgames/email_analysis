@@ -611,6 +611,125 @@ fn html_detail(
     a.html_report.as_ref().map_or_else(String::new, f)
 }
 
+/// Signatures PGP / S/MIME (FR-049, FR-050).
+fn signatures(msg: &Message, out: &mut Out) {
+    use mf_core::{SignatureScheme, SignatureStatus};
+    for c in &msg.signatures {
+        let scheme = match c.scheme {
+            SignatureScheme::Pgp => "PGP",
+            SignatureScheme::Smime => "S/MIME",
+        };
+        let who = c
+            .signer_ids
+            .first()
+            .cloned()
+            .or_else(|| c.fingerprint.clone())
+            .unwrap_or_else(|| "signataire inconnu".into());
+        match c.status {
+            SignatureStatus::Invalid => out.push(
+                "signature_invalid",
+                Severity::High,
+                format!("Signature {scheme} invalide"),
+                c.note
+                    .clone()
+                    .unwrap_or_else(|| "Le contenu a été modifié après la signature.".into()),
+                Vec::new(),
+            ),
+            SignatureStatus::UnknownKey => out.push(
+                "signature_unknown_key",
+                Severity::Info,
+                format!("Signature {scheme} non vérifiée : clé absente"),
+                format!(
+                    "Clé {} : importez la clé publique du signataire pour vérifier.",
+                    c.fingerprint
+                        .as_deref()
+                        .or(c.key_id.as_deref())
+                        .unwrap_or("?")
+                ),
+                Vec::new(),
+            ),
+            SignatureStatus::Encrypted => out.push(
+                "message_encrypted",
+                Severity::Info,
+                format!("Message chiffré ({scheme})"),
+                "Contenu illisible sans la clé privée du destinataire.".into(),
+                Vec::new(),
+            ),
+            SignatureStatus::Unsupported => out.push(
+                "signature_unsupported",
+                Severity::Low,
+                format!("Signature {scheme} non vérifiable"),
+                c.note.clone().unwrap_or_default(),
+                Vec::new(),
+            ),
+            SignatureStatus::Valid => {}
+        }
+        if c.status == SignatureStatus::Valid || c.status == SignatureStatus::Invalid {
+            if c.matches_from == Some(false) {
+                out.push(
+                    "signature_signer_mismatch",
+                    Severity::High,
+                    format!("Signataire {scheme} différent de l'expéditeur"),
+                    format!(
+                        "Signé par {who} ({}) alors que l'expéditeur affiché est {}.",
+                        c.signer_emails.join(", "),
+                        msg.from
+                            .iter()
+                            .filter_map(|a| a.address.clone())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                    Vec::new(),
+                );
+            }
+            if c.key_revoked == Some(true) {
+                out.push(
+                    "signature_key_revoked",
+                    Severity::High,
+                    format!("Clé {scheme} révoquée"),
+                    format!("La clé de {who} a été révoquée par son propriétaire."),
+                    Vec::new(),
+                );
+            }
+            if c.key_expired == Some(true) {
+                out.push(
+                    "signature_key_expired",
+                    Severity::Medium,
+                    format!("Clé ou certificat {scheme} expiré à la date de signature"),
+                    c.cert.as_ref().map_or_else(
+                        || format!("Clé de {who}."),
+                        |x| {
+                            format!(
+                                "Certificat valable du {} au {}.",
+                                x.not_before.as_deref().unwrap_or("?"),
+                                x.not_after.as_deref().unwrap_or("?")
+                            )
+                        },
+                    ),
+                    Vec::new(),
+                );
+            }
+            if let Some(cert) = c.cert.as_ref().filter(|x| x.chain != "trusted") {
+                out.push(
+                    "smime_untrusted_ca",
+                    Severity::Low,
+                    "Certificat S/MIME d'une autorité non reconnue".into(),
+                    format!(
+                        "{} — émis par {}. L'intégrité est prouvée, pas l'identité : importez le certificat de l'autorité pour la confirmer.",
+                        match cert.chain.as_str() {
+                            "self_signed" => "Certificat auto-signé",
+                            "invalid_chain" => "Chaîne de certificats invalide",
+                            _ => "Autorité non importée",
+                        },
+                        cert.issuer
+                    ),
+                    Vec::new(),
+                );
+            }
+        }
+    }
+}
+
 /// Tous les constats d'un message, du plus grave au moins grave.
 pub fn evaluate(msg: &Message) -> Vec<Finding> {
     let mut out = Out(Vec::new());
@@ -619,6 +738,7 @@ pub fn evaluate(msg: &Message) -> Vec<Finding> {
     chronology(msg, &mut out);
     links(msg, &mut out);
     attachments(msg, &mut out);
+    signatures(msg, &mut out);
     let mut v = out.0;
     v.sort_by_key(|f| std::cmp::Reverse(f.severity));
     v

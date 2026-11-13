@@ -645,3 +645,79 @@ fn quishing_html_attachment_redirects() {
             .any(|i| i.value.contains("api.telegram.org/bot"))
     );
 }
+
+/// FR-049 à FR-051 : signatures vérifiées avec le trousseau de l'analyste, constats et verdict.
+#[test]
+fn signed_messages() {
+    use mf_core::VerdictLevel::*;
+    let mut keys = mf_engine::Keyring::default();
+    for f in ["keys/alice-pgp.asc", "keys/test-ca.pem"] {
+        keys.import(f, &std::fs::read(corpus(f)).expect(f))
+            .expect(f);
+    }
+    for (file, verdict, rule) in [
+        ("eml/pgp-signed-valid.eml", Legitimate, None),
+        ("eml/pgp-inline-valid.eml", Legitimate, None),
+        ("eml/smime-signed-valid.eml", Legitimate, None),
+        ("eml/smime-opaque-valid.eml", Legitimate, None),
+        (
+            "eml/pgp-signed-tampered.eml",
+            Suspicious,
+            Some("signature_invalid"),
+        ),
+        (
+            "eml/smime-signed-tampered.eml",
+            Suspicious,
+            Some("signature_invalid"),
+        ),
+        (
+            "eml/pgp-signed-mismatch.eml",
+            Suspicious,
+            Some("signature_signer_mismatch"),
+        ),
+        (
+            "eml/smime-signed-expired.eml",
+            Suspicious,
+            Some("signature_key_expired"),
+        ),
+        (
+            "eml/pgp-signed-unknown-key.eml",
+            Suspicious,
+            Some("signature_unknown_key"),
+        ),
+    ] {
+        let a = mf_engine::open_with(&corpus(file), &keys).expect(file);
+        let m = &a.message;
+        assert_eq!(m.signatures.len(), 1, "{file}");
+        let v = m.verdict.as_ref().expect("verdict");
+        assert_eq!(v.level, verdict, "{file} : {} {:?}", v.summary, v.reasons);
+        if verdict == Legitimate {
+            assert!(
+                v.reasons[0].starts_with("Signature"),
+                "{file} : la raison doit être la signature, pas {:?}",
+                v.reasons[0]
+            );
+        }
+        if let Some(r) = rule {
+            assert!(m.findings.iter().any(|f| f.rule == r), "{file} : {r}");
+        }
+    }
+    // Sans trousseau : jamais « légitime » sur la seule foi d'une signature non vérifiée.
+    let a = mf_engine::open(&corpus("eml/pgp-signed-valid.eml")).expect("ouverture");
+    assert_eq!(
+        a.message.verdict.as_ref().map(|v| v.level),
+        Some(Suspicious)
+    );
+    // S/MIME sans l'autorité importée : intégrité prouvée, identité non → à vérifier.
+    let a = mf_engine::open(&corpus("eml/smime-signed-valid.eml")).expect("ouverture");
+    assert_eq!(
+        a.message.verdict.as_ref().map(|v| v.level),
+        Some(Suspicious)
+    );
+    assert!(
+        a.message
+            .findings
+            .iter()
+            .any(|f| f.rule == "smime_untrusted_ca")
+    );
+}

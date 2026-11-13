@@ -24,7 +24,13 @@ fn weight(rule: &str) -> (u32, bool) {
         | "attachment_double_extension"
         | "attachment_bidi_name"
         | "attachment_credential_form"
-        | "attachment_exfiltration" => (40, true),
+        | "attachment_exfiltration"
+        | "signature_invalid"
+        | "signature_signer_mismatch" => (40, true),
+        "signature_key_revoked" => (30, false),
+        "signature_key_expired" => (20, false),
+        "smime_untrusted_ca" | "signature_unsupported" => (5, false),
+        "signature_unknown_key" | "message_encrypted" => (0, false),
         "attachment_type_mismatch" | "attachment_macros" => (30, true),
         "auth_dmarc_fail" | "auth_dmarc_permerror" | "attachment_encrypted_archive" => (30, false),
         "link_text_target_mismatch" | "display_name_brand" => (20, true),
@@ -95,7 +101,9 @@ pub fn evaluate(msg: &Message) -> Verdict {
             }
         }
     }
-    let authenticated = passed(msg, "dmarc") || (passed(msg, "spf") && passed(msg, "dkim"));
+    let signed_ok = signed_by_sender(msg);
+    let authenticated =
+        passed(msg, "dmarc") || (passed(msg, "spf") && passed(msg, "dkim")) || signed_ok.is_some();
     let level = if score >= MALICIOUS && deception {
         VerdictLevel::Malicious
     } else if score >= SUSPICIOUS || !authenticated || !embedded_malicious.is_empty() {
@@ -126,12 +134,15 @@ pub fn evaluate(msg: &Message) -> Verdict {
         }
     };
     if level == VerdictLevel::Legitimate {
-        let how = if passed(msg, "dmarc") {
-            "DMARC réussi"
+        // La preuve d'authenticité qui a réellement fondé le verdict.
+        let how = if let Some(sig) = &signed_ok {
+            sig.clone()
+        } else if passed(msg, "dmarc") {
+            "DMARC réussi".to_string()
         } else {
-            "SPF et DKIM réussis"
+            "SPF et DKIM réussis".to_string()
         };
-        reasons.insert(0, how.to_string());
+        reasons.insert(0, how);
     }
     Verdict {
         level,
@@ -139,6 +150,28 @@ pub fn evaluate(msg: &Message) -> Verdict {
         summary,
         reasons,
     }
+}
+
+/// Signature valide d'une clé ou d'un certificat de confiance au nom de l'expéditeur.
+fn signed_by_sender(msg: &Message) -> Option<String> {
+    use mf_core::{SignatureScheme, SignatureStatus};
+    msg.signatures.iter().find_map(|c| {
+        let ok = c.status == SignatureStatus::Valid
+            && c.matches_from == Some(true)
+            && c.key_expired != Some(true)
+            && c.key_revoked != Some(true);
+        match c.scheme {
+            SignatureScheme::Pgp if ok => {
+                Some("Signature PGP valide d'une clé importée au nom de l'expéditeur".to_string())
+            }
+            SignatureScheme::Smime
+                if ok && c.cert.as_ref().is_some_and(|x| x.chain == "trusted") =>
+            {
+                Some("Signature S/MIME valide, certificat d'une autorité importée".to_string())
+            }
+            _ => None,
+        }
+    })
 }
 
 fn embedded_malicious_only(msg: &Message) -> bool {
