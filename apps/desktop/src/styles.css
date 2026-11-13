@@ -148,10 +148,23 @@ button { font: inherit; color: inherit; }
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
   gap: var(--s5);
-  padding: var(--s5);
-  align-items: start;
+  padding: 0 0 0 var(--s5);
+  height: 100%;
 }
-@media (max-width: 1100px) { .reading-grid { grid-template-columns: 1fr; } }
+/* Écran large : le corps du message et le panneau de droite défilent chacun de leur côté. */
+.reading-main, .reading-grid > .inventory {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--s5) 0;
+  scrollbar-gutter: stable;
+}
+.reading-grid > .inventory { position: static; padding-right: var(--s4); border-left: 1px solid var(--rule); padding-left: var(--s4); }
+.reading-main { padding-right: var(--s2); }
+@media (max-width: 1100px) {
+  .reading-grid { grid-template-columns: 1fr; height: auto; padding: var(--s5); }
+  .reading-main, .reading-grid > .inventory { overflow: visible; padding: 0; border-left: 0; }
+}
 
 /* L'élément signature : l'étiquette de scellé de la preuve. */
 .seal {

@@ -48,7 +48,7 @@ if (footer) {
   const all = document.createElement("button");
   all.type = "button";
   all.className = "btn export-all";
-  all.textContent = "Indicateurs (tous)";
+  all.textContent = "Télécharger tous les indicateurs";
   all.title = "Exporter en CSV les indicateurs de tous les messages chargés";
   all.addEventListener("click", () => void ui.exportAllIocs("csv"));
   footer.append(all);

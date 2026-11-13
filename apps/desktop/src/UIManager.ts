@@ -126,7 +126,9 @@ export class UIManager {
 
     // Garder la position de lecture quand on déplie les en-têtes, pas en changeant de message.
     const key = `${s.selectedId}:${s.path.join("/")}`;
-    const scroll = key === this.lastKey ? this.reading.scrollTop : 0;
+    // Trois zones défilent : le panneau (écran étroit), le corps du message et le panneau de droite.
+    const same = key === this.lastKey;
+    const scrolls = [this.reading, ...this.reading.querySelectorAll<HTMLElement>(".reading-main, .inventory")].map((el) => (same ? el.scrollTop : 0));
     this.lastKey = key;
     this.reading.replaceChildren(
       renderReading({ evidence: root.evidence, message }, crumbs, {
@@ -140,7 +142,7 @@ export class UIManager {
         onGoToDepth: (d) => s.goToDepth(d),
       }),
     );
-    this.reading.scrollTop = scroll;
+    [this.reading, ...this.reading.querySelectorAll<HTMLElement>(".reading-main, .inventory")].forEach((el, i) => (el.scrollTop = scrolls[i] ?? 0));
   }
 
   private source(root: MessageView, path: number[]): string {
