@@ -404,3 +404,76 @@ fn blocked_resources_are_located() {
         "image cid: intégrée"
     );
 }
+
+/// T111 / FR-042 : IP et DNS d'envoi et de réception, EML et MSG (en-têtes de transport réels).
+#[test]
+fn mail_route() {
+    let a = mf_engine::open(&corpus("eml/phishing-basic.eml")).expect("ouverture");
+    let r = a.message.route.as_ref().expect("route");
+    assert_eq!(r.sender.as_deref(), Some("support@micros0ft-help.example"));
+    assert_eq!(
+        r.origin.as_ref().and_then(|e| e.ip.as_deref()),
+        Some("198.51.100.4")
+    );
+    let delivered = r.last_public.as_ref().expect("remis par");
+    assert_eq!(delivered.ip.as_deref(), Some("203.0.113.7"));
+    assert_eq!(delivered.rdns.as_deref(), Some("mx.attacker.example"));
+    assert_eq!(
+        r.receiver.as_ref().and_then(|e| e.name.as_deref()),
+        Some("mx.victim.example")
+    );
+    assert_eq!(a.message.hops.len(), 2);
+
+    let m = mf_engine::open(&corpus("msg/unicode.msg")).expect("ouverture");
+    let r = m.message.route.as_ref().expect("route");
+    assert_eq!(r.sender.as_deref(), Some("brizhou@gmail.com"));
+    assert_eq!(
+        r.origin.as_ref().and_then(|e| e.ip.as_deref()),
+        Some("209.85.220.182")
+    );
+    assert_eq!(
+        r.origin.as_ref().and_then(|e| e.name.as_deref()),
+        Some("mail-vc0-f182.google.com")
+    );
+    assert_eq!(
+        r.receiver.as_ref().and_then(|e| e.name.as_deref()),
+        Some("ms06561.mac.com")
+    );
+    assert_eq!(m.message.hops.len(), 4);
+
+    // Sans en-têtes de transport : résumé vide mais expéditeur connu.
+    let n = mf_engine::open(&corpus("msg/attachment.msg")).expect("ouverture");
+    let r = n.message.route.as_ref().expect("route");
+    assert!(n.message.hops.is_empty() && r.origin.is_none() && r.receiver.is_none());
+}
+
+/// T113 / FR-041 : le HTML d'origine des MSG est reconstitué depuis le RTF compressé.
+#[test]
+fn msg_html_from_rtf() {
+    let u = mf_engine::open(&corpus("msg/unicode.msg")).expect("ouverture");
+    assert_eq!(u.message.html_source.as_deref(), Some("rtf"));
+    let html = u.message.body_html.as_deref().expect("HTML reconstitué");
+    assert!(
+        html.starts_with("<div dir=\"ltr\">This is a test email"),
+        "{html}"
+    );
+    assert!(
+        u.message
+            .body_html_safe
+            .as_deref()
+            .is_some_and(|s| s.contains("This is a test email"))
+    );
+
+    let t = mf_engine::open(&corpus("msg/test_email.msg")).expect("ouverture");
+    assert_eq!(t.message.html_source.as_deref(), Some("rtf"));
+    let safe = t.message.body_html_safe.as_deref().expect("rendu");
+    assert!(!safe.contains("<script") && !safe.contains("\\rtf"));
+
+    // RTF natif (\fromtext) : pas de HTML, texte conservé, aucun avertissement.
+    let a = mf_engine::open(&corpus("msg/ascii.msg")).expect("ouverture");
+    assert_eq!(a.message.html_source, None);
+    assert!(a.message.issues.is_empty(), "{:?}", a.message.issues);
+
+    let e = mf_engine::open(&corpus("eml/html-links-inline.eml")).expect("ouverture");
+    assert_eq!(e.message.html_source.as_deref(), Some("html"));
+}

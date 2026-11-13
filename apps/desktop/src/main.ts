@@ -1,5 +1,8 @@
 // Orchestration (rôle de main.js dans msg-reader) + raccourcis clavier.
 import "./styles.css";
+import { initTheme, mountThemeToggle } from "./theme";
+
+initTheme();
 import { FileHandler } from "./FileHandler";
 import { MessageHandler } from "./MessageHandler";
 import { UIManager } from "./UIManager";
@@ -39,5 +42,7 @@ document.addEventListener("keydown", (e) => {
 });
 
 warmUp();
+const footer = document.querySelector<HTMLElement>(".list-footer");
+if (footer) mountThemeToggle(footer);
 void ui.render();
 void files.init();

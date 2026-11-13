@@ -54,6 +54,9 @@ npm run tauri build        # installeurs .msi/.exe, .dmg, .deb/.AppImage
 
 Déposez des `.eml` / `.msg` (ou un dossier) dans la fenêtre. Pour chaque message :
 
+- **Acheminement** (en haut à droite, sous l'adresse de l'expéditeur) : IP et DNS de la machine d'envoi (DNS inverse et nom annoncé HELO, tels qu'enregistrés dans les en-têtes `Received` — aucune requête DNS), première IP publique si l'origine est privée, IP qui a remis le message au destinataire, serveur de réception et chemin complet avec les délais entre relais.
+- **HTML / Texte / Source HTML** : le rendu HTML (neutralisé) est la vue par défaut ; pour les `.msg` Outlook dont la mise en forme n'existe qu'en RTF, le HTML d'origine est reconstitué depuis le RTF. **Plein écran** affiche le rendu sur toute la fenêtre.
+- **Thème** (en bas de la liste) : auto, clair ou sombre, mémorisé sur le poste.
 - **Afficher les en-têtes** (bouton ou touche `H`) déplie tous les en-têtes bruts, dans l'ordre d'origine ; l'état reste mémorisé d'un message à l'autre.
 - **Fichiers contenus** liste chaque pièce jointe (nom, type, taille, inline/attaché, SHA-256 et MD5) ; un message joint (`.eml`, `.msg`) s'ouvre avec **Ouvrir le message joint**, qui affiche ses propres en-têtes, fichiers et URL.
 - **Télécharger** (sous chaque fichier) ouvre une boîte de confirmation rappelant nom, type, taille, SHA-256 et le risque ; le fichier enregistré est identique octet pour octet à celui du message, sous un nom assaini. Un message Outlook embarqué en objet MAPI n'a pas de fichier d'origine : il s'ouvre mais ne se télécharge pas.
@@ -88,7 +91,7 @@ cargo build --release
 ./target/release/mf extract suspect.eml --index 1 --out ./pj   # enregistre la PJ n°1
 ```
 
-**Tests** : `cargo test` (20 tests : corpus, concordance avec `msg_parser`, parité fichier / octets) et `npm run test:web`.
+**Tests** : `cargo test` (tests unitaires et corpus, concordance avec `msg_parser`, parité fichier / octets) et `npm run test:web`.
 
 ## Continuer
 

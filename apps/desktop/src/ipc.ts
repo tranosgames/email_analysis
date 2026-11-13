@@ -59,6 +59,47 @@ export interface BlockedResource {
   marker: number | null;
 }
 
+export type IpScope = "public" | "private" | "loopback" | "link_local" | "shared" | "documentation";
+
+/** Saut de la chaîne Received, du plus ancien (1) au plus récent (FR-042). */
+export interface Hop {
+  index: number;
+  header_index: number;
+  from_name: string | null;
+  from_helo: string | null;
+  from_rdns: string | null;
+  from_ip: string | null;
+  from_ip_scope: IpScope | null;
+  by_name: string | null;
+  by_ip: string | null;
+  with: string | null;
+  id: string | null;
+  for_addr: string | null;
+  date_raw: string | null;
+  date_utc: string | null;
+  delay_seconds: number | null;
+}
+
+export interface Endpoint {
+  ip: string | null;
+  ip_scope: IpScope | null;
+  rdns: string | null;
+  name: string | null;
+  hop: number;
+  source: string;
+}
+
+export interface MailRoute {
+  sender: string | null;
+  origin: Endpoint | null;
+  originating_ip_header: Endpoint | null;
+  first_public: Endpoint | null;
+  last_public: Endpoint | null;
+  receiver: Endpoint | null;
+  received_utc: string | null;
+  transit_seconds: number | null;
+}
+
 export interface Message {
   subject: string | null;
   from: Address[];
@@ -77,6 +118,10 @@ export interface Message {
   body_html_safe: string | null;
   blocked_remote_resources: number;
   blocked_resources: BlockedResource[];
+  hops: Hop[];
+  route: MailRoute | null;
+  /** « html » : corps HTML d'origine ; « rtf » : HTML reconstitué depuis le RTF Outlook (FR-041). */
+  html_source: "html" | "rtf" | null;
   attachments: Attachment[];
   urls: UrlEntry[];
   issues: string[];

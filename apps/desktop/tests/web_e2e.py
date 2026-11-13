@@ -99,14 +99,41 @@ def main() -> int:
             check(ev["sha256"] in seal and ev["md5"] in seal, f"{name} : SHA-256 et MD5 identiques à la CLI")
             btn = page.locator(".header-toggle-row button").inner_text()
             check(f"({len(msg['headers'])})" in btn, f"{name} : {len(msg['headers'])} en-têtes")
-            files = page.locator(".inventory section").nth(0)
+            files = page.locator(".inventory section.files")
             names = files.locator(".file-name").all_inner_texts()
             check(names == [a["filename"] for a in msg["attachments"]], f"{name} : fichiers contenus {names}")
             hashes = files.locator(".file-hash").all_inner_texts()
             check(all(a["sha256"] in h for a, h in zip(msg["attachments"], hashes)), f"{name} : SHA-256 des fichiers")
             check(all(a["md5"] in h for a, h in zip(msg["attachments"], hashes)), f"{name} : MD5 visibles sans survol")
             urls = page.locator(".inventory .url-text").all_inner_texts()
+            # FR-042 : panneau d'acheminement au-dessus des fichiers, expéditeur en titre.
+            route = msg.get("route") or {}
+            check(page.locator(".inventory > section").first.get_attribute("class") == "route", f"{name} : acheminement en tête du panneau")
+            if route.get("sender"):
+                check(page.locator(".route-title").inner_text() == route["sender"], f"{name} : titre = {route['sender']}")
+            origin = (route.get("origin") or {}).get("ip")
+            if origin:
+                check(origin in page.locator(".route").inner_text(), f"{name} : IP d'envoi {origin} affichée")
             check(urls == [u["url"] for u in msg["urls"]], f"{name} : {len(urls)} URL identiques")
+
+        # FR-041 : HTML reconstitué depuis le RTF d'un .msg.
+        page.locator(".message-item", has_text="Test for TIF").click()
+        page.wait_for_selector(".body-frame")
+        check("RTF Outlook" in page.locator(".body-tabs").inner_text(), "MSG : HTML reconstitué depuis le RTF, provenance indiquée")
+        check("This is a test email" in page.frame_locator(".body-frame").locator("body").inner_text(), "MSG : rendu HTML affiché")
+        page.click("text=Plein écran")
+        check(page.locator(".fullscreen .body-frame").count() == 1, "plein écran ouvert")
+        page.keyboard.press("Escape")
+        check(page.locator(".fullscreen").count() == 0, "Échap ferme le plein écran")
+        r = page.locator(".route").inner_text()
+        check("209.85.220.182" in r and "mail-vc0-f182.google.com" in r and "ms06561.mac.com" in r, "MSG : IP/DNS d'envoi et serveur de réception")
+
+        # FR-040 : thème clair / sombre mémorisé.
+        page.click(".theme-toggle")
+        page.click(".theme-toggle")
+        check(page.locator("html").get_attribute("data-theme") == "dark", "thème sombre appliqué")
+        page.click(".theme-toggle")
+        check(page.locator("html").get_attribute("data-theme") is None, "retour au thème automatique")
 
         # FR-038 : téléchargement avec boîte de confirmation.
         page.locator(".message-item", has_text="Urgent : mot de passe").click()

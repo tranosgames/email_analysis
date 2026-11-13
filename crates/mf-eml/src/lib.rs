@@ -102,6 +102,9 @@ fn convert(msg: &mail_parser::Message<'_>, raw: &[u8], depth: usize) -> Message 
         }),
         ..Default::default()
     };
+    if out.body_html.is_some() {
+        out.html_source = Some("html".into());
+    }
     if out.date_raw.is_some() && out.date_utc.is_none() {
         out.issues.push("en-tête Date non interprétable".into());
     }

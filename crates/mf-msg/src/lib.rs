@@ -6,6 +6,7 @@
 #![deny(clippy::unwrap_used, clippy::panic)]
 
 mod props;
+pub mod rtf;
 
 use mf_core::{Address, Attachment, Disposition, EngineError, MAX_NESTING, Message, hashes};
 use props::Node;
@@ -203,12 +204,24 @@ fn convert(node: &Node<'_>, depth: usize) -> Message {
         .binary(PR_HTML)
         .map(|b| node.decode_internet(b))
         .or_else(|| node.string(PR_HTML));
-    if out.body_text.is_none()
-        && out.body_html.is_none()
-        && node.binary(PR_RTF_COMPRESSED).is_some()
-    {
-        out.issues
-            .push("corps présent uniquement en RTF compressé (rendu RTF : tâche T030)".into());
+    if out.body_html.is_some() {
+        out.html_source = Some("html".into());
+    } else if let Some(compressed) = node.binary(PR_RTF_COMPRESSED) {
+        // FR-041 : Outlook conserve souvent la mise en forme uniquement en RTF compressé, avec
+        // le HTML d'origine encapsulé (MS-OXRTFEX).
+        match rtf::decompress(compressed).map(|r| rtf::convert(&r)) {
+            Ok(rtf::RtfBody::Html(html)) => {
+                out.body_html = Some(html);
+                out.html_source = Some("rtf".into());
+            }
+            Ok(rtf::RtfBody::Text(text)) => {
+                if out.body_text.as_deref().is_none_or(|t| t.trim().is_empty()) && !text.is_empty()
+                {
+                    out.body_text = Some(text);
+                }
+            }
+            Err(e) => out.issues.push(format!("PR_RTF_COMPRESSED 0x1009 : {e}")),
+        }
     }
 
     // Pièces jointes (FR-016, FR-036) et messages embarqués (FR-018).

@@ -135,6 +135,88 @@ fn print_attachments(m: &Message, indent: usize) {
     }
 }
 
+fn fmt_endpoint(e: &mf_core::Endpoint) -> String {
+    let mut parts = Vec::new();
+    if let Some(ip) = &e.ip {
+        let scope = match e.ip_scope {
+            Some(mf_core::IpScope::Private) => " (privée)",
+            Some(mf_core::IpScope::Loopback) => " (boucle locale)",
+            Some(mf_core::IpScope::LinkLocal) => " (lien local)",
+            Some(mf_core::IpScope::Shared) => " (CGNAT)",
+            _ => "",
+        };
+        parts.push(format!("{ip}{scope}"));
+    }
+    if let Some(r) = &e.rdns {
+        parts.push(format!("DNS inverse {r}"));
+    }
+    if let Some(n) = &e.name {
+        parts.push(format!("annoncé {n}"));
+    }
+    let src = if e.hop > 0 {
+        format!("saut {}", e.hop)
+    } else {
+        e.source.clone()
+    };
+    format!(
+        "{}  [{src}]",
+        if parts.is_empty() {
+            "—".into()
+        } else {
+            parts.join(" · ")
+        }
+    )
+}
+
+/// FR-042 : IP et DNS d'envoi et de réception (noms tels qu'enregistrés dans les en-têtes).
+fn print_route(m: &Message) {
+    let Some(r) = &m.route else { return };
+    println!(
+        "Acheminement — {}",
+        r.sender.as_deref().unwrap_or("expéditeur inconnu")
+    );
+    if m.hops.is_empty() {
+        println!("  Aucun en-tête Received (message interne, brouillon ou en-têtes absents)");
+    }
+    let row = |label: &str, e: &Option<mf_core::Endpoint>| {
+        if let Some(e) = e {
+            println!("  {label:<22} {}", fmt_endpoint(e));
+        }
+    };
+    row("Envoi", &r.origin);
+    row("IP du client (en-tête)", &r.originating_ip_header);
+    row("Première IP publique", &r.first_public);
+    row("Remis par", &r.last_public);
+    if let Some(rcv) = &r.receiver {
+        let what = [rcv.name.clone(), rcv.ip.clone()]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" · ");
+        println!(
+            "  {:<22} {}  {}",
+            "Réception",
+            if what.is_empty() { "—".into() } else { what },
+            r.received_utc.as_deref().unwrap_or("")
+        );
+    }
+    for h in &m.hops {
+        println!(
+            "  {:>2}. {} [{}] → {}  {}{}",
+            h.index,
+            h.from_rdns
+                .clone()
+                .or(h.from_name.clone())
+                .unwrap_or_else(|| "—".into()),
+            h.from_ip.as_deref().unwrap_or("—"),
+            h.by_name.as_deref().unwrap_or("—"),
+            h.date_utc.as_deref().unwrap_or(""),
+            h.delay_seconds
+                .map_or(String::new(), |d| format!("  (+{d} s)")),
+        );
+    }
+}
+
 fn kind_label(k: mf_core::BlockedKind) -> &'static str {
     use mf_core::BlockedKind::*;
     match k {
@@ -279,6 +361,7 @@ fn run(cli: Cli) -> Result<(), String> {
             }
             println!("Fichiers contenus ({})", m.attachments.len());
             print_attachments(m, 1);
+            print_route(m);
             print_urls(m, false);
             print_blocked(m);
         }

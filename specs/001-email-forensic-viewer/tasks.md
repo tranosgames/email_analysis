@@ -84,7 +84,7 @@ Workspace Cargo : `crates/mf-*/src/`, app : `apps/desktop/`, tests transverses :
 - [ ] T027 [US1] Implémenter le décodage des propriétés MAPI fixes/variables et la table des noms canoniques dans `crates/mf-msg/src/props.rs` et `tags.rs` (dépend de T026)
 - [ ] T028 [US1] Implémenter les destinataires (`__recip_version1.0_#*`, types 1/2/3, résolution SMTP/EX) dans `crates/mf-msg/src/recipients.rs`
 - [ ] T029 [US1] Implémenter la conversion MSG → `Message` (corps texte/HTML, dates MAPI, `PR_INTERNET_CPID`) dans `crates/mf-msg/src/convert.rs`
-- [ ] T030 [P] [US1] Implémenter le corps RTF : décompression (`compressed-rtf`), dé-encapsulation HTML MS-OXRTFEX, texte de secours (`rtf-parser`) dans `crates/mf-msg/src/rtf.rs`
+- [x] T030 [P] [US1] Implémenter le corps RTF : décompression (`compressed-rtf`), dé-encapsulation HTML MS-OXRTFEX, texte de secours (`rtf-parser`) dans `crates/mf-msg/src/rtf.rs`
 - [ ] T031 [P] [US1] Implémenter la sanitisation HTML (`ammonia`, réécriture `cid:`, compteur de ressources bloquées) dans `crates/mf-analysis/src/html.rs`
 - [ ] T032 [US1] Enregistrer les parseurs EML/MSG comme `EvidenceSource` dans `crates/mf-core/src/source.rs` ; implémenter `mf show`
 - [ ] T033 [US1] Implémenter les commandes Tauri `ingest_paths`, `list_messages`, `get_message`, `get_evidence`, `set_pin` + événements `ingest://*` dans `apps/desktop/src-tauri/src/commands.rs` et `jobs.rs`
@@ -127,6 +127,16 @@ Workspace Cargo : `crates/mf-*/src/`, app : `apps/desktop/`, tests transverses :
 - [x] T108 [P] [US1] CLI : section « Ressources distantes bloquées » de `mf show`
 - [x] T109 [US1] Interface : liste dépliable, repères numérotés dans le rendu, vue « Source HTML » numérotée, mention « chargement bloqué » dans la liste des URL
 - [x] T110 [US1] E2E web : liste, repère trouvé dans le rendu, ligne atteinte dans la source, zéro requête
+
+### Ajouts clarification 2026-11-13 — FR-040 (thème), FR-041 (HTML depuis RTF), FR-042 (IP/DNS)
+
+- [x] T111 [P] [US2] Tests de la chaîne `Received` (IP, DNS inverse, HELO, by, délais, IP privée, formats Gmail/Exchange/Postfix) dans `crates/mf-analysis/src/hops.rs` et `crates/mf-engine/tests/corpus.rs`
+- [x] T112 [US2] `hops.rs` + résumé `MailRoute` (envoi, première IP publique, réception) dans `crates/mf-analysis` et `crates/mf-core/src/model.rs` (réalise T044 pour la partie chaîne)
+- [x] T113 [P] [US1] Tests RTF : vecteur MS-OXRTFCP, dé-encapsulation HTML, extraction texte, MSG du corpus
+- [x] T114 [US1] `crates/mf-msg/src/rtf.rs` (réalise T030) + champ `body_source`
+- [x] T115 [P] CLI : section « Acheminement » de `mf show`
+- [x] T116 [US1] Interface : bouton Thème (Auto/Clair/Sombre), onglet HTML avec provenance, panneau « Acheminement » au-dessus des fichiers contenus
+- [x] T117 E2E web : thème, panneau IP/DNS, rendu HTML d'un MSG
 
 **Checkpoint**: User Story 1 fonctionnelle et testable seule — MVP « lecteur forensic sûr ».
 
@@ -360,7 +370,8 @@ Task: "T031 Sanitisation HTML dans crates/mf-analysis/src/html.rs"
 | FR-017 | T053, T057 | | FR-034 | T009, T024, T084 |
 | FR-035 | T095 | | FR-036 | T093, T094, T096 |
 | FR-037 | T091, T092, T097 | | FR-038 | T098–T104 |
-| FR-039 | T105–T110 | | | |
+| FR-039 | T105–T110 | | FR-040 | T116, T117 |
+| FR-041 | T113, T114, T116 | | FR-042 | T111, T112, T115, T116 |
 
 ---
 

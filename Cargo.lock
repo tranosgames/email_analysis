@@ -457,6 +457,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "compressed-rtf"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51b7f2aaf6791c6517669240b82ef12c1283b39772f0cad3bc5c73f19f6e7f16"
+dependencies = [
+ "byteorder",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "const-oid"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1971,7 +1981,9 @@ version = "0.1.0"
 dependencies = [
  "ammonia",
  "base64 0.22.1",
+ "chrono",
  "linkify",
+ "mail-parser",
  "mf-core",
  "regex",
 ]
@@ -2025,6 +2037,7 @@ version = "0.1.0"
 dependencies = [
  "cfb 0.15.0",
  "chrono",
+ "compressed-rtf",
  "encoding_rs",
  "mf-core",
  "mf-eml",

@@ -12,6 +12,7 @@ mf-eml.workspace = true
 cfb.workspace = true
 encoding_rs.workspace = true
 chrono.workspace = true
+compressed-rtf = "1"
 
 [dev-dependencies]
 msg_parser.workspace = true

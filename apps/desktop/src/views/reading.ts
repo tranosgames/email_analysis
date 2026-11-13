@@ -2,7 +2,7 @@
 // corps sûr, et colonne d'inventaire « Fichiers contenus » (FR-036) + « URL » (FR-037).
 
 import { h, humanSize, toast } from "../dom";
-import type { Address, Attachment, BlockedKind, BlockedResource, Header, Message, MessageView, UrlEntry, UrlLocation } from "../ipc";
+import type { Address, Attachment, BlockedKind, BlockedResource, Endpoint, Header, Hop, IpScope, MailRoute, Message, MessageView, UrlEntry, UrlLocation } from "../ipc";
 
 export interface ReadingActions {
   headersOpen: boolean;
@@ -55,7 +55,7 @@ export function renderReading(view: MessageView, crumbs: Crumb[], a: ReadingActi
 
   main.append(body(view));
 
-  const grid = h("div", { class: "reading-grid" }, main, inventory(m.attachments, m.urls, a, m.blocked_resources));
+  const grid = h("div", { class: "reading-grid" }, main, inventory(m.attachments, m.urls, a, m.blocked_resources, m.route, m.hops));
   return grid;
 }
 
@@ -315,6 +315,59 @@ function sourceView(m: Message): HTMLElement {
   );
 }
 
+/** Iframe du rendu HTML : sanitisé par le moteur, puis sandbox sans scripts + CSP stricte. */
+function renderFrame(m: Message, onReady: (markers: Map<number, Element>) => void, autoHeight = true): HTMLIFrameElement {
+  const doc =
+    `<!doctype html><html><head><meta charset="utf-8">` +
+    `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'">` +
+    `<style>${FRAME_CSS}</style></head><body>${m.body_html_safe ?? ""}</body></html>`;
+  const frame = h("iframe", {
+    class: "body-frame",
+    sandbox: "allow-same-origin",
+    referrerpolicy: "no-referrer",
+    title: "Corps HTML neutralisé",
+  }) as HTMLIFrameElement;
+  frame.srcdoc = doc;
+  frame.addEventListener("load", () => {
+    const d = frame.contentDocument;
+    if (!d) return;
+    const markers = decorateRender(d, m);
+    if (autoHeight) frame.style.height = `${Math.min(d.documentElement.scrollHeight + 8, 4000)}px`;
+    onReady(markers);
+  });
+  return frame;
+}
+
+/** Rendu HTML sur toute la fenêtre ; Échap ou « Fermer » pour revenir. */
+function openFullscreen(m: Message): void {
+  const close = () => {
+    overlay.remove();
+    document.removeEventListener("keydown", onKey, true);
+  };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      e.preventDefault();
+      close();
+    }
+  };
+  const overlay = h(
+    "div",
+    { class: "fullscreen", role: "dialog", "aria-modal": "true", "aria-label": "Rendu HTML en plein écran" },
+    h(
+      "div",
+      { class: "fullscreen-bar" },
+      h("strong", {}, m.subject?.trim() || "(sans objet)"),
+      h("span", { class: "spacer" }),
+      h("button", { class: "btn btn-small", type: "button", onclick: close }, "Fermer (Échap)"),
+    ),
+    renderFrame(m, () => {}, false),
+  );
+  document.addEventListener("keydown", onKey, true);
+  document.body.append(overlay);
+  overlay.querySelector<HTMLButtonElement>("button")?.focus();
+}
+
 function body(view: MessageView): HTMLElement {
   const m = view.message;
   const wrap = h("section", { "aria-label": "Corps du message" });
@@ -331,25 +384,36 @@ function body(view: MessageView): HTMLElement {
     ["text", "Texte", hasText],
     ["source", "Source HTML", hasHtml],
   ];
-  if (choices.filter((c) => c[2]).length > 1) {
-    for (const [k, label, ok] of choices) {
-      if (!ok) continue;
-      tabs.append(
-        h(
-          "button",
-          {
-            class: "btn btn-small",
-            type: "button",
-            "aria-pressed": String(mode === k),
-            onclick: () => {
-              bodyMode = k;
-              rebuild();
-            },
+  // FR-041 : les trois vues restent visibles ; une vue absente est grisée avec son explication.
+  for (const [k, label, ok] of choices) {
+    tabs.append(
+      h(
+        "button",
+        {
+          class: "btn btn-small",
+          type: "button",
+          "aria-pressed": String(mode === k),
+          disabled: !ok,
+          title: ok ? "" : k === "text" ? "Pas de version texte dans ce message" : "Pas de version HTML dans ce message",
+          onclick: () => {
+            bodyMode = k;
+            rebuild();
           },
-          label,
-        ),
-      );
-    }
+        },
+        label,
+      ),
+    );
+  }
+  if (mode !== "text" && m.html_source === "rtf") {
+    tabs.append(h("span", { class: "provenance" }, "HTML d'origine reconstitué depuis le RTF Outlook"));
+  } else if (!hasHtml) {
+    tabs.append(h("span", { class: "provenance" }, "Ce message n'a pas de version HTML"));
+  }
+  if (mode === "html" && m.body_html_safe) {
+    tabs.append(
+      h("span", { class: "spacer" }),
+      h("button", { class: "btn btn-small", type: "button", onclick: () => openFullscreen(m) }, "Plein écran"),
+    );
   }
   wrap.append(tabs);
   if (mode !== "text") {
@@ -358,23 +422,7 @@ function body(view: MessageView): HTMLElement {
   }
 
   if (mode === "html" && m.body_html_safe) {
-    // Seconde couche après la sanitisation côté moteur : sandbox sans scripts + CSP stricte.
-    const doc =
-      `<!doctype html><html><head><meta charset="utf-8">` +
-      `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'">` +
-      `<style>${FRAME_CSS}</style></head><body>${m.body_html_safe}</body></html>`;
-    const frame = h("iframe", {
-      class: "body-frame",
-      sandbox: "allow-same-origin",
-      referrerpolicy: "no-referrer",
-      title: "Corps HTML neutralisé",
-    }) as HTMLIFrameElement;
-    frame.srcdoc = doc;
-    frame.addEventListener("load", () => {
-      const d = frame.contentDocument;
-      if (!d) return;
-      const markers = decorateRender(d, m);
-      frame.style.height = `${Math.min(d.documentElement.scrollHeight + 8, 4000)}px`;
+    const frame = renderFrame(m, (markers) => {
       const focus = pendingFocus;
       if (focus?.target === "render") {
         pendingFocus = null;
@@ -402,17 +450,151 @@ function body(view: MessageView): HTMLElement {
   return wrap;
 }
 
-function inventory(files: Attachment[], urls: UrlEntry[], a: ReadingActions, blocked: BlockedResource[]): HTMLElement {
+// ——— Acheminement : IP et DNS d'envoi et de réception (FR-042) ———
+
+const SCOPE_LABEL: Partial<Record<IpScope, string>> = {
+  private: "IP privée",
+  loopback: "boucle locale",
+  link_local: "lien local",
+  shared: "CGNAT",
+  documentation: "plage de documentation",
+};
+
+function fmtDuration(s: number): string {
+  const sign = s < 0 ? "−" : "+";
+  const a = Math.abs(s);
+  if (a < 60) return `${sign}${a} s`;
+  if (a < 3600) return `${sign}${Math.floor(a / 60)} min ${a % 60} s`;
+  return `${sign}${Math.floor(a / 3600)} h ${Math.floor((a % 3600) / 60)} min`;
+}
+
+function fmtUtc(utc: string | null): string {
+  return utc ? `${utc.replace("T", " ").replace(/(\+00:00|Z)$/, "")} UTC` : "";
+}
+
+function endpointBlock(label: string, e: Endpoint, hint: string): HTMLElement {
+  const dns: [string, string | null][] = [
+    ["DNS inverse", e.rdns],
+    ["Nom annoncé", e.name],
+  ];
+  return h(
+    "div",
+    { class: "route-block" },
+    h("div", { class: "route-label" }, h("span", {}, label), h("span", {}, hint)),
+    e.ip
+      ? h(
+          "div",
+          { class: "route-ip" },
+          h("code", {}, e.ip),
+          e.ip_scope && SCOPE_LABEL[e.ip_scope] ? h("span", { class: "scope" }, SCOPE_LABEL[e.ip_scope] ?? "") : null,
+          h("button", { class: "btn btn-small", type: "button", onclick: () => copy(e.ip ?? "", "IP") }, "Copier"),
+        )
+      : null,
+    dns.some(([, v]) => v)
+      ? h("dl", { class: "route-dns" }, ...dns.filter(([, v]) => v).flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v ?? "")]))
+      : null,
+  );
+}
+
+function routeSection(r: MailRoute, hops: Hop[]): HTMLElement {
+  const sec = h(
+    "section",
+    { class: "route", "aria-label": "Acheminement du message" },
+    h("h2", { class: "route-title" }, r.sender ?? "Expéditeur inconnu"),
+    h(
+      "p",
+      { class: "route-sub" },
+      hops.length
+        ? `${hops.length} relais${r.transit_seconds !== null ? ` · acheminé en ${fmtDuration(r.transit_seconds).slice(1)}` : ""}`
+        : "Aucun en-tête Received : message interne, brouillon ou en-têtes de transport absents.",
+    ),
+  );
+  const hop = (e: Endpoint) => (e.hop > 0 ? `saut ${e.hop}` : e.source);
+  if (r.origin) sec.append(endpointBlock("Envoi", r.origin, hop(r.origin)));
+  if (r.originating_ip_header)
+    sec.append(endpointBlock("IP du client de l'expéditeur", r.originating_ip_header, r.originating_ip_header.source));
+  if (r.first_public) sec.append(endpointBlock("Première IP publique", r.first_public, hop(r.first_public)));
+  if (r.last_public) sec.append(endpointBlock("Remis au destinataire par", r.last_public, hop(r.last_public)));
+  if (r.receiver) {
+    sec.append(
+      h(
+        "div",
+        { class: "route-block" },
+        h("div", { class: "route-label" }, h("span", {}, "Réception"), h("span", {}, hop(r.receiver))),
+        r.receiver.ip
+          ? h("div", { class: "route-ip" }, h("code", {}, r.receiver.ip),
+              h("button", { class: "btn btn-small", type: "button", onclick: () => copy(r.receiver?.ip ?? "", "IP") }, "Copier"))
+          : null,
+        h(
+          "dl",
+          { class: "route-dns" },
+          h("dt", {}, "Serveur"),
+          h("dd", {}, r.receiver.name ?? "non indiqué"),
+          r.received_utc ? h("dt", {}, "Reçu le") : null,
+          r.received_utc ? h("dd", {}, fmtUtc(r.received_utc)) : null,
+        ),
+      ),
+    );
+  }
+  if (hops.length) {
+    sec.append(
+      h(
+        "details",
+        {},
+        h("summary", {}, `Chemin complet (${hops.length} sauts)`),
+        h(
+          "ol",
+          { class: "hops" },
+          ...hops.map((x) =>
+            h(
+              "li",
+              {},
+              h("span", { class: "num" }, String(x.index)),
+              h(
+                "div",
+                {},
+                h(
+                  "div",
+                  { class: "hop-line" },
+                  `${x.from_rdns ?? x.from_name ?? "—"}${x.from_ip ? ` [${x.from_ip}]` : ""} → ${x.by_name ?? "—"}`,
+                ),
+                h(
+                  "div",
+                  { class: "hop-meta" },
+                  [x.with, fmtUtc(x.date_utc)].filter(Boolean).join(" · "),
+                  x.delay_seconds !== null
+                    ? h("span", { class: x.delay_seconds < 0 ? "negative" : undefined, title: x.delay_seconds < 0 ? "Horodatage antérieur au saut précédent : horloge décalée ou en-tête falsifié" : "" }, ` (${fmtDuration(x.delay_seconds)})`)
+                    : null,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+  sec.append(
+    h(
+      "p",
+      { class: "route-note" },
+      "Noms DNS tels qu'enregistrés dans les en-têtes Received par les serveurs, au moment du transit. Aucune requête DNS n'est effectuée.",
+    ),
+  );
+  return sec;
+}
+
+function inventory(files: Attachment[], urls: UrlEntry[], a: ReadingActions, blocked: BlockedResource[], route: MailRoute | null, hops: Hop[]): HTMLElement {
   return h(
     "aside",
     { class: "inventory", "aria-label": "Contenu du message" },
+    route ? routeSection(route, hops) : null,
     filesSection(files, a),
     urlsSection(urls, blocked),
   );
 }
 
 function filesSection(files: Attachment[], a: ReadingActions): HTMLElement {
-  const sec = h("section", {}, h("h2", {}, "Fichiers contenus", h("span", { class: "count" }, String(files.length))));
+  const sec = h("section", { class: "files" }, h("h2", {}, "Fichiers contenus", h("span", { class: "count" }, String(files.length))));
   if (!files.length) {
     sec.append(h("p", { class: "none" }, "Aucun fichier"));
     return sec;

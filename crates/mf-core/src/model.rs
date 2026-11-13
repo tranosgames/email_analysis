@@ -107,6 +107,82 @@ pub struct UrlEntry {
     pub occurrences: u32,
 }
 
+/// Portée d'une adresse IP (pour distinguer l'origine réelle d'un relais interne).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IpScope {
+    Public,
+    /// RFC 1918 / IPv6 ULA (fc00::/7).
+    Private,
+    Loopback,
+    LinkLocal,
+    /// 100.64.0.0/10 (CGNAT).
+    Shared,
+    /// Plages de documentation (RFC 5737 / RFC 3849), traitées comme publiques pour l'analyse.
+    Documentation,
+}
+
+/// Un saut de la chaîne `Received`, du plus ancien (1) au plus récent (FR-012, FR-042).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Hop {
+    pub index: u32,
+    /// Position de l'en-tête `Received` dans la liste des en-têtes.
+    pub header_index: u32,
+    /// Nom annoncé par la machine émettrice (après `from`, ou HELO/EHLO).
+    pub from_name: Option<String>,
+    /// HELO explicite quand il diffère du nom annoncé.
+    pub from_helo: Option<String>,
+    /// DNS inverse de l'IP émettrice, tel qu'enregistré par le serveur récepteur.
+    pub from_rdns: Option<String>,
+    pub from_ip: Option<String>,
+    pub from_ip_scope: Option<IpScope>,
+    /// Serveur qui a reçu le message à ce saut.
+    pub by_name: Option<String>,
+    pub by_ip: Option<String>,
+    pub with: Option<String>,
+    pub id: Option<String>,
+    pub for_addr: Option<String>,
+    pub date_raw: Option<String>,
+    pub date_utc: Option<String>,
+    /// Délai depuis le saut précédent (négatif = incohérence d'horloge ou falsification).
+    pub delay_seconds: Option<i64>,
+}
+
+/// Extrémité d'acheminement mise en évidence (FR-042).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Endpoint {
+    pub ip: Option<String>,
+    pub ip_scope: Option<IpScope>,
+    /// DNS inverse enregistré dans l'en-tête (aucune résolution n'est faite).
+    pub rdns: Option<String>,
+    /// Nom annoncé (HELO/EHLO) ou nom du serveur récepteur.
+    pub name: Option<String>,
+    /// Numéro du saut d'où provient l'information (0 = autre en-tête).
+    pub hop: u32,
+    /// En-tête source, ex. `Received` ou `X-Originating-IP`.
+    pub source: String,
+}
+
+/// Résumé d'acheminement : d'où part le message et où il arrive (FR-042).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MailRoute {
+    /// Adresse de l'expéditeur (`From`), titre du panneau.
+    pub sender: Option<String>,
+    /// Machine d'envoi : côté `from` du saut le plus ancien.
+    pub origin: Option<Endpoint>,
+    /// IP déclarée par le client de messagerie (`X-Originating-IP`, `X-Sender-IP`…).
+    pub originating_ip_header: Option<Endpoint>,
+    /// Première IP publique de la chaîne, si l'origine est privée, absente ou différente.
+    pub first_public: Option<Endpoint>,
+    /// Dernière IP publique : celle qui a remis le message à l'infrastructure du destinataire.
+    pub last_public: Option<Endpoint>,
+    /// Serveur de réception finale : côté `by` du saut le plus récent.
+    pub receiver: Option<Endpoint>,
+    pub received_utc: Option<String>,
+    /// Durée totale d'acheminement (premier → dernier horodatage).
+    pub transit_seconds: Option<i64>,
+}
+
 /// Nature d'une ressource distante que le HTML demandait à charger (FR-039).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -168,6 +244,12 @@ pub struct Message {
     pub body_html_safe: Option<String>,
     /// Nombre de ressources distantes bloquées (= `blocked_resources.len()`).
     pub blocked_remote_resources: u32,
+    /// Chaîne `Received`, du plus ancien au plus récent (FR-012, FR-042).
+    pub hops: Vec<Hop>,
+    /// Résumé IP/DNS d'envoi et de réception (FR-042).
+    pub route: Option<MailRoute>,
+    /// Provenance du corps HTML affiché (FR-041) : `html` (d'origine) ou `rtf` (reconstitué).
+    pub html_source: Option<String>,
     /// Détail de chaque ressource distante bloquée, dans l'ordre du HTML (FR-039).
     pub blocked_resources: Vec<BlockedResource>,
     pub attachments: Vec<Attachment>,

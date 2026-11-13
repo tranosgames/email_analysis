@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::panic)]
 
+pub mod hops;
 pub mod html;
 pub mod urls;
 
@@ -30,6 +31,9 @@ pub fn analyze(msg: &mut Message) {
         msg.blocked_resources = safe.blocked;
     }
     msg.urls = urls::extract(msg);
+    let chain = hops::hops(msg);
+    msg.route = Some(hops::route(msg, &chain));
+    msg.hops = chain;
     for a in &mut msg.attachments {
         if let Some(inner) = a.embedded.as_deref_mut() {
             analyze(inner);

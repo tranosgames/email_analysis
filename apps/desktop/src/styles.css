@@ -30,8 +30,9 @@
   color-scheme: light;
 }
 
+/* FR-040 : thème automatique (système), ou forcé par data-theme sur <html>. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --paper: #151b22;
     --sheet: #1d252e;
     --ink: #e3e8ee;
@@ -44,6 +45,19 @@
     --warn-bg: #3a3214;
     color-scheme: dark;
   }
+}
+:root[data-theme="dark"] {
+  --paper: #151b22;
+  --sheet: #1d252e;
+  --ink: #e3e8ee;
+  --ink-soft: #9aa7b5;
+  --rule: #2f3a46;
+  --seal: #e0b228;
+  --seal-ink: #2a2000;
+  --data: #6fc2c9;
+  --select: #26364a;
+  --warn-bg: #3a3214;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -261,10 +275,48 @@ button { font: inherit; color: inherit; }
   @keyframes unfold { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 }
 
-.local-note { margin: 0; padding: var(--s3); border-top: 1px solid var(--rule); font-size: 12px; color: var(--ink-soft); }
+.list-footer { display: flex; align-items: center; gap: var(--s3); padding: var(--s3); border-top: 1px solid var(--rule); }
+.local-note { margin: 0; font-size: 12px; color: var(--ink-soft); }
 
 .file-hash { display: grid; grid-template-columns: max-content 1fr; gap: 0 var(--s2); margin: var(--s1) 0 0; }
 .file-hash dt { font-family: var(--ui); font-weight: 700; }
 .file-hash dd { margin: 0; overflow-wrap: anywhere; }
 .file-actions { display: flex; flex-wrap: wrap; gap: var(--s1); margin-top: var(--s2); }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* Bouton de thème (FR-040) */
+.theme-toggle { flex: none; font-size: 13px; min-height: 28px; }
+
+/* Onglets du corps : versions indisponibles grisées, provenance du HTML (FR-041) */
+.body-tabs .provenance { font-size: 12px; color: var(--ink-soft); }
+.body-tabs .spacer, .fullscreen-bar .spacer { flex: 1; }
+.fullscreen {
+  position: fixed; inset: 0; z-index: 20; display: grid; grid-template-rows: auto 1fr;
+  background: var(--paper); padding: var(--s3); gap: var(--s2);
+}
+.fullscreen-bar { display: flex; align-items: center; gap: var(--s3); }
+.fullscreen-bar strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fullscreen .body-frame { height: 100% !important; min-height: 0; }
+
+/* Acheminement : IP et DNS d'envoi et de réception (FR-042) */
+.route { border: 1px solid var(--rule); border-left: 4px solid var(--data); border-radius: 6px; background: var(--sheet); padding: var(--s3); }
+.route-title { margin: 0 0 var(--s1); font-size: 17px; overflow-wrap: anywhere; font-family: var(--mono); font-weight: 600; }
+.route-sub { margin: 0 0 var(--s3); font-size: 12px; color: var(--ink-soft); }
+.route-block { padding: var(--s2) 0; border-top: 1px solid var(--rule); }
+.route-block:first-of-type { border-top: 0; padding-top: 0; }
+.route-label { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s2); font-size: 12px; font-weight: 700; color: var(--ink-soft); }
+.route-ip { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin: 2px 0; }
+.route-ip code { font-family: var(--mono); font-size: 16px; font-weight: 600; color: var(--data); overflow-wrap: anywhere; user-select: all; }
+.route-dns { display: grid; grid-template-columns: max-content 1fr; gap: 0 var(--s2); margin: 0; font-size: 12.5px; }
+.route-dns dt { color: var(--ink-soft); }
+.route-dns dd { margin: 0; font-family: var(--mono); overflow-wrap: anywhere; }
+.scope { font-size: 11px; border-radius: 4px; padding: 0 5px; background: var(--warn-bg); color: var(--ink); }
+.route details { margin-top: var(--s2); border-top: 1px solid var(--rule); padding-top: var(--s2); }
+.route summary { cursor: pointer; font-size: 13px; font-weight: 700; }
+.hops { list-style: none; margin: var(--s2) 0 0; padding: 0; font-size: 12px; }
+.hops li { padding: var(--s1) 0; border-top: 1px dashed var(--rule); display: grid; grid-template-columns: auto 1fr; gap: var(--s2); }
+.hops .num { height: 18px; min-width: 18px; font-size: 11px; background: var(--select); color: var(--ink); }
+.hops .hop-line { font-family: var(--mono); overflow-wrap: anywhere; }
+.hops .hop-meta { color: var(--ink-soft); }
+.hops .negative { color: #b3261e; font-weight: 700; }
+.route-note { margin: var(--s2) 0 0; font-size: 11.5px; color: var(--ink-soft); }
