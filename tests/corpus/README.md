@@ -4,6 +4,7 @@
 |---|---|---|---|
 | `eml/phishing-basic.eml` | synthétique (projet) | MIT | RFC 2047, 2 `Received`, Reply-To divergent, PJ `.pdf.exe` |
 | `eml/phishing-auth.eml` | synthétique (projet) | MIT | Authentication-Results (SPF softfail, DMARC fail), DKIM relaxed au bh valide, domaines sosies, punycode, lien texte ≠ cible, IP brute, user@hôte, PJ HTML et ZIP chiffré |
+| `eml/quishing-html-attachment.eml` | synthétique (projet), généré par segno | MIT | QR codes (image `cid:` PNG et image `data:` JPEG), pièce jointe HTML avec formulaire chiffré en `atob()`, exfiltration Telegram, adresse du destinataire pré-remplie, liens Safe Links / Google / Bing |
 | `eml/remote-resources.eml` | synthétique (projet) | MIT | 9 ressources distantes de types variés (pixel, fonds, srcset, feuilles de style, @import, script, cadre), image `cid:` |
 | `eml/html-links-inline.eml` | synthétique (projet) | MIT | liens HTML dupliqués, texte ≠ cible, pixel distant, image `cid:`, script |
 | `nested/eml-in-eml.eml` | synthétique (projet) | MIT | `message/rfc822` imbriqué avec sa propre PJ et ses URL |

@@ -461,6 +461,8 @@ mod tests {
             detected_type: None,
             detected_mime: None,
             flags: Vec::new(),
+            qr_codes: Vec::new(),
+            html_report: None,
             data: data.to_vec(),
         };
         inspect(&mut a);

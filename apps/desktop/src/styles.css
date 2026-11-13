@@ -421,7 +421,18 @@ button { font: inherit; color: inherit; }
 .verdict.v-suspicious .verdict-level { color: color-mix(in srgb, var(--sev-medium) 55%, var(--ink)); }
 .verdict.v-legitimate { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 9%, var(--sheet)); }
 .verdict.v-legitimate .verdict-level { color: var(--ok); }
-.verdict-pill { border-radius: 4px; padding: 0 5px; font-weight: 700; font-size: 11px; }
+.message-item .badges { flex-wrap: wrap; row-gap: 2px; }
+.verdict-pill { white-space: nowrap; border-radius: 4px; padding: 0 5px; font-weight: 700; font-size: 11px; }
 .verdict-pill.v-malicious { background: var(--sev-high); color: var(--sev-high-ink); }
 .verdict-pill.v-suspicious { background: var(--sev-medium); color: var(--sev-medium-ink); }
 .verdict-pill.v-legitimate { border: 1px solid var(--ok); color: var(--ok); }
+
+/* ——— QR codes, pages HTML jointes, redirections (FR-046 à FR-048) ——— */
+.att-detail { margin: var(--s1) 0; font-size: 12.5px; }
+.att-detail .url-text { display: block; }
+.html-report { display: grid; grid-template-columns: auto 1fr; gap: 2px var(--s2); padding: var(--s2); border-left: 3px solid var(--sev-medium); background: color-mix(in srgb, var(--sev-medium) 8%, transparent); }
+.html-report dt { font-weight: 700; }
+.html-report dd { margin: 0; overflow-wrap: anywhere; font-family: var(--mono); font-size: 12px; }
+.html-report dd.bad { color: var(--sev-high); font-weight: 700; }
+.url-note.redirect .url-text { font-size: 12px; }
+.url-note.redirect.bad { color: var(--sev-high); }

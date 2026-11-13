@@ -580,6 +580,7 @@ fn verdicts() {
     for (file, expected) in [
         ("eml/phishing-auth.eml", Malicious),
         ("eml/phishing-basic.eml", Malicious),
+        ("eml/quishing-html-attachment.eml", Malicious),
         ("eml/remote-resources.eml", Suspicious),
         ("msg/unicode.msg", Legitimate),
     ] {
@@ -588,4 +589,59 @@ fn verdicts() {
         let v = a.message.verdict.as_ref().expect("verdict");
         assert_eq!(v.level, expected, "{file} : {} ({})", v.summary, v.score);
     }
+}
+
+/// FR-046 à FR-048 : QR codes, pièce jointe HTML piégée, redirections décodées.
+#[test]
+fn quishing_html_attachment_redirects() {
+    let a = mf_engine::open(&corpus("eml/quishing-html-attachment.eml")).expect("ouverture");
+    let m = &a.message;
+    let urls: Vec<&str> = m.urls.iter().map(|u| u.url.as_str()).collect();
+    for expected in [
+        "https://quish-m365.example/scan?u=victim", // QR de l'image cid:
+        "https://xn--pypal-4ve.example/mfa",        // QR d'une image data: du HTML
+        "https://collect.evil-kit.example/next.php", // formulaire décodé depuis atob()
+        "https://docs-share.evil-kit.example/view?id=88", // derrière Google
+        "https://login.evil-kit.example/auth",      // derrière Bing (base64)
+        "https://www.docusign.example/legit",       // derrière Safe Links
+    ] {
+        assert!(urls.contains(&expected), "{expected} absente de {urls:#?}");
+    }
+    let rules: Vec<&str> = m.findings.iter().map(|f| f.rule.as_str()).collect();
+    for r in [
+        "attachment_credential_form",
+        "attachment_exfiltration",
+        "attachment_obfuscated_script",
+        "attachment_recipient_prefill",
+        "attachment_qr_code",
+        "url_qr_code",
+        "url_redirector_abuse",
+    ] {
+        assert!(rules.contains(&r), "{r} absente de {rules:?}");
+    }
+    // Safe Links dont le texte affiché est la vraie destination : pas de lien trompeur.
+    assert!(!rules.contains(&"link_text_target_mismatch"), "{rules:?}");
+    let sl = m
+        .urls
+        .iter()
+        .find(|u| u.url.contains("safelinks"))
+        .expect("safelinks");
+    assert_eq!(sl.redirect.as_ref().map(|r| r.abused), Some(false));
+    let html = m
+        .attachments
+        .iter()
+        .find(|a| a.filename == "Contrat_2026.html")
+        .expect("pj");
+    let r = html.html_report.as_ref().expect("rapport HTML");
+    assert_eq!(
+        r.recipient_prefill,
+        vec!["victim@victim.example".to_string()]
+    );
+    assert!(r.exfiltration.iter().any(|e| e == "bot Telegram"));
+    // Le jeton du bot Telegram figure dans les indicateurs.
+    assert!(
+        m.iocs
+            .iter()
+            .any(|i| i.value.contains("api.telegram.org/bot"))
+    );
 }

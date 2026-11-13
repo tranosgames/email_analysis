@@ -74,6 +74,12 @@ pub struct Attachment {
     pub detected_mime: Option<String>,
     /// Alertes sur ce fichier (FR-017).
     pub flags: Vec<AttachmentFlag>,
+    /// Contenu des QR codes de l'image (FR-046).
+    #[serde(default)]
+    pub qr_codes: Vec<String>,
+    /// Analyse statique d'une pièce HTML/SVG (FR-047).
+    #[serde(default)]
+    pub html_report: Option<HtmlAttachmentReport>,
     /// Contenu décodé ; jamais sérialisé (export à la demande uniquement).
     #[serde(skip)]
     pub data: Vec<u8>,
@@ -83,11 +89,27 @@ pub struct Attachment {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum UrlLocation {
-    Header { name: String },
+    Header {
+        name: String,
+    },
     BodyText,
-    HtmlAttribute { attribute: String },
+    HtmlAttribute {
+        attribute: String,
+    },
     HtmlText,
     HtmlCss,
+    /// Contenu d'une pièce jointe HTML/SVG (FR-047).
+    Attachment {
+        filename: String,
+    },
+    /// Charge utile d'un QR code trouvé dans une image (FR-046).
+    QrCode {
+        source: String,
+    },
+    /// Vraie destination décodée d'un lien de redirection (FR-048).
+    Redirect {
+        from: String,
+    },
 }
 
 impl std::fmt::Display for UrlLocation {
@@ -98,6 +120,9 @@ impl std::fmt::Display for UrlLocation {
             UrlLocation::HtmlAttribute { attribute } => write!(f, "HTML @{attribute}"),
             UrlLocation::HtmlText => write!(f, "HTML texte"),
             UrlLocation::HtmlCss => write!(f, "HTML css"),
+            UrlLocation::Attachment { filename } => write!(f, "pièce jointe {filename}"),
+            UrlLocation::QrCode { source } => write!(f, "QR code dans {source}"),
+            UrlLocation::Redirect { from } => write!(f, "redirection depuis {from}"),
         }
     }
 }
@@ -117,6 +142,45 @@ pub struct UrlEntry {
     /// Marque imitée, si le domaine en est un sosie (FR-043).
     pub lookalike_of: Option<String>,
     pub flags: Vec<UrlFlag>,
+    /// Lien de redirection : service et vraie destination décodée sans requête (FR-048).
+    #[serde(default)]
+    pub redirect: Option<Redirect>,
+}
+
+/// Redirection décodée hors-ligne.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Redirect {
+    /// Service qui redirige (« Google », « Microsoft Safe Links »…).
+    pub service: String,
+    /// Destination finale encodée dans le lien.
+    pub target: String,
+    /// Redirecteur ouvert détourné (Google, Bing…) plutôt que réécriture de sécurité.
+    pub abused: bool,
+}
+
+/// Analyse statique d'une pièce jointe HTML ou SVG (FR-047).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HtmlAttachmentReport {
+    /// Champs de saisie de mot de passe.
+    pub password_fields: u32,
+    /// Formulaires : (méthode, action).
+    pub forms: Vec<FormInfo>,
+    /// Points d'exfiltration reconnus (bot Telegram, webhook…).
+    pub exfiltration: Vec<String>,
+    /// Procédés d'obfuscation relevés (`atob`, `eval`, longues chaînes base64…).
+    pub obfuscation: Vec<String>,
+    /// Redirections automatiques (meta refresh, `window.location`…).
+    pub redirects: Vec<String>,
+    /// Adresse du destinataire présente dans la page (page personnalisée).
+    pub recipient_prefill: Vec<String>,
+    /// Une charge base64 décodée (`atob`) a été analysée elle aussi.
+    pub decoded_payloads: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FormInfo {
+    pub method: String,
+    pub action: Option<String>,
 }
 
 /// Alerte sur une URL (FR-022, FR-043).
@@ -135,6 +199,10 @@ pub enum UrlFlag {
     Lookalike,
     /// Identifiants dans l'URL (`user@host`), procédé de masquage de la vraie cible.
     Credentials,
+    /// Redirecteur ouvert détourné (Google, Bing…) qui cache la vraie destination.
+    Redirector,
+    /// URL lue dans un QR code.
+    QrCode,
 }
 
 /// Alerte sur une pièce jointe (FR-017).
@@ -153,6 +221,18 @@ pub enum AttachmentFlag {
     HtmlAttachment,
     Tnef,
     ZeroLength,
+    /// Pièce HTML avec champ de mot de passe (FR-047).
+    CredentialForm,
+    /// Envoi des données vers un service d'exfiltration connu.
+    Exfiltration,
+    /// Script obfusqué.
+    ObfuscatedScript,
+    /// Redirection automatique à l'ouverture.
+    AutoRedirect,
+    /// Adresse du destinataire intégrée à la page.
+    RecipientPrefill,
+    /// Image contenant un QR code (FR-046).
+    QrCode,
 }
 
 /// Résultat d'authentification déclaré par un serveur (FR-013).

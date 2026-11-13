@@ -322,7 +322,7 @@ fn chronology(msg: &Message, out: &mut Out) {
 }
 
 fn links(msg: &Message, out: &mut Out) {
-    let rules: [(UrlFlag, &str, Severity, &str, &str); 6] = [
+    let rules: [(UrlFlag, &str, Severity, &str, &str); 8] = [
         (
             UrlFlag::Lookalike,
             "url_lookalike_domain",
@@ -365,6 +365,20 @@ fn links(msg: &Message, out: &mut Out) {
             "Lien vers un domaine internationalisé (punycode)",
             "idn",
         ),
+        (
+            UrlFlag::QrCode,
+            "url_qr_code",
+            Severity::Medium,
+            "Lien caché dans un QR code",
+            "qr",
+        ),
+        (
+            UrlFlag::Redirector,
+            "url_redirector_abuse",
+            Severity::Medium,
+            "Lien qui passe par un redirecteur détourné",
+            "redirection",
+        ),
     ];
     for (flag, rule, sev, title, _) in rules {
         let hits: Vec<_> = msg
@@ -392,6 +406,11 @@ fn links(msg: &Message, out: &mut Out) {
                     u.unicode_host
                         .as_deref()
                         .unwrap_or(u.host.as_deref().unwrap_or(""))
+                ),
+                UrlFlag::Redirector => format!(
+                    "{} → {}",
+                    u.redirect.as_ref().map_or("?", |r| r.service.as_str()),
+                    crate::redirects::final_target(&msg.urls, &u.url)
                 ),
                 _ => u.url.clone(),
             })
@@ -486,6 +505,87 @@ fn attachments(msg: &Message, out: &mut Out) {
                     "Pièce jointe TNEF (winmail.dat)",
                     "Conteneur Outlook pouvant renfermer d'autres fichiers.".to_string(),
                 ),
+                AttachmentFlag::CredentialForm => (
+                    "attachment_credential_form",
+                    Severity::High,
+                    "Faux formulaire de connexion",
+                    html_detail(a, |r| {
+                        let actions: Vec<String> = r
+                            .forms
+                            .iter()
+                            .filter_map(|f| {
+                                f.action
+                                    .as_ref()
+                                    .map(|x| format!("{} {x}", f.method.to_uppercase()))
+                            })
+                            .collect();
+                        format!(
+                            "{} champ(s) de mot de passe{}.",
+                            r.password_fields,
+                            if actions.is_empty() {
+                                String::new()
+                            } else {
+                                format!(" ; envoi : {}", actions.join(", "))
+                            }
+                        )
+                    }),
+                ),
+                AttachmentFlag::Exfiltration => (
+                    "attachment_exfiltration",
+                    Severity::High,
+                    "Envoi des données vers un service tiers",
+                    html_detail(a, |r| format!("{}.", r.exfiltration.join(", "))),
+                ),
+                AttachmentFlag::ObfuscatedScript => (
+                    "attachment_obfuscated_script",
+                    Severity::Medium,
+                    "Script obfusqué",
+                    html_detail(a, |r| {
+                        format!(
+                            "{}{}.",
+                            r.obfuscation.join(", "),
+                            if r.decoded_payloads > 0 {
+                                format!(
+                                    " ; {} charge(s) décodée(s) et analysée(s)",
+                                    r.decoded_payloads
+                                )
+                            } else {
+                                String::new()
+                            }
+                        )
+                    }),
+                ),
+                AttachmentFlag::AutoRedirect => (
+                    "attachment_auto_redirect",
+                    Severity::Medium,
+                    "Redirection automatique à l'ouverture",
+                    html_detail(a, |r| r.redirects.join(" ; ")),
+                ),
+                AttachmentFlag::RecipientPrefill => (
+                    "attachment_recipient_prefill",
+                    Severity::Medium,
+                    "Page personnalisée pour le destinataire",
+                    html_detail(a, |r| {
+                        format!(
+                            "L'adresse {} est intégrée à la page (champ pré-rempli, ciblage).",
+                            r.recipient_prefill.join(", ")
+                        )
+                    }),
+                ),
+                AttachmentFlag::QrCode => (
+                    "attachment_qr_code",
+                    Severity::Medium,
+                    "Image contenant un QR code",
+                    format!(
+                        "{} : {}.",
+                        a.filename,
+                        a.qr_codes
+                            .iter()
+                            .map(|c| crate::urls::defang(c))
+                            .collect::<Vec<_>>()
+                            .join(" ; ")
+                    ),
+                ),
                 AttachmentFlag::ZeroLength => (
                     "attachment_zero_length",
                     Severity::Info,
@@ -502,6 +602,13 @@ fn attachments(msg: &Message, out: &mut Out) {
             );
         }
     }
+}
+
+fn html_detail(
+    a: &mf_core::Attachment,
+    f: impl Fn(&mf_core::HtmlAttachmentReport) -> String,
+) -> String {
+    a.html_report.as_ref().map_or_else(String::new, f)
 }
 
 /// Tous les constats d'un message, du plus grave au moins grave.

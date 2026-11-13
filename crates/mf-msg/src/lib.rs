@@ -303,6 +303,8 @@ fn convert(node: &Node<'_>, depth: usize) -> Message {
             detected_type: None,
             detected_mime: None,
             flags: Vec::new(),
+            qr_codes: Vec::new(),
+            html_report: None,
             embedded,
             data,
         });

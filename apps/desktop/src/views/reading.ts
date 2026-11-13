@@ -2,7 +2,7 @@
 // corps sûr, et colonne d'inventaire « Fichiers contenus » (FR-036) + « URL » (FR-037).
 
 import { h, humanSize, toast } from "../dom";
-import type { Address, Attachment, AuthResult, BlockedKind, BlockedResource, Endpoint, Finding, Header, Hop, Ioc, IocKind, IpScope, MailRoute, Message, MessageView, Severity, SourceRef, UrlEntry, UrlLocation, Verdict } from "../ipc";
+import type { Address, Attachment, HtmlAttachmentReport, AuthResult, BlockedKind, BlockedResource, Endpoint, Finding, Header, Hop, Ioc, IocKind, IpScope, MailRoute, Message, MessageView, Severity, SourceRef, UrlEntry, UrlLocation, Verdict } from "../ipc";
 import { VERDICT_LABEL } from "../ipc";
 
 export interface ReadingActions {
@@ -641,6 +641,15 @@ function filesSection(files: Attachment[], a: ReadingActions): HTMLElement {
             f.disposition === "inline" ? h("span", { class: "tag-inline" }, "inline") : h("span", {}, "attaché"),
           ),
           // Les deux empreintes en clair (FR-036) : le MD5 n'est plus caché dans une infobulle.
+          f.qr_codes.length
+            ? h(
+                "div",
+                { class: "att-detail" },
+                h("strong", {}, `QR code${f.qr_codes.length > 1 ? "s" : ""} : `),
+                ...f.qr_codes.map((c) => h("div", { class: "url-text" }, c)),
+              )
+            : null,
+          f.html_report ? htmlReport(f.html_report) : null,
           h("dl", { class: "file-hash" }, h("dt", {}, "SHA-256"), h("dd", {}, f.sha256), h("dt", {}, "MD5"), h("dd", {}, f.md5)),
           h(
             "div",
@@ -676,6 +685,23 @@ function filesSection(files: Attachment[], a: ReadingActions): HTMLElement {
   return sec;
 }
 
+/** FR-047 — ce que contient la page HTML jointe (rien n'est exécuté). */
+function htmlReport(r: HtmlAttachmentReport): HTMLElement | null {
+  const rows: [string, string, boolean][] = [];
+  if (r.password_fields) rows.push(["Mot de passe", `${r.password_fields} champ(s) de saisie`, true]);
+  for (const f of r.forms) rows.push(["Formulaire", `${f.method.toUpperCase()} → ${f.action ?? "(même page / script)"}`, !!f.action && /^https?:/i.test(f.action)]);
+  if (r.exfiltration.length) rows.push(["Exfiltration", r.exfiltration.join(", "), true]);
+  if (r.obfuscation.length) rows.push(["Obfuscation", r.obfuscation.join(", ") + (r.decoded_payloads ? ` — ${r.decoded_payloads} charge(s) décodée(s)` : ""), false]);
+  for (const x of r.redirects) rows.push(["Redirection", x, false]);
+  if (r.recipient_prefill.length) rows.push(["Destinataire", r.recipient_prefill.join(", "), false]);
+  if (!rows.length) return h("div", { class: "att-detail muted-label" }, "Page HTML : aucun formulaire, script suspect ni redirection relevé.");
+  return h(
+    "dl",
+    { class: "att-detail html-report", "aria-label": "Analyse de la page HTML" },
+    ...rows.flatMap(([k, v, bad]) => [h("dt", {}, k), h("dd", { class: bad ? "bad" : "" }, v)]),
+  );
+}
+
 function locationLabel(l: UrlLocation): string {
   switch (l.kind) {
     case "header":
@@ -688,6 +714,12 @@ function locationLabel(l: UrlLocation): string {
       return "texte HTML";
     case "html_css":
       return "CSS";
+    case "attachment":
+      return `pièce jointe ${l.filename}`;
+    case "qr_code":
+      return `QR code dans ${l.source}`;
+    case "redirect":
+      return `redirection depuis ${l.from}`;
   }
 }
 
@@ -701,7 +733,7 @@ async function copy(text: string, what: string): Promise<void> {
 }
 
 function urlsSection(urls: UrlEntry[], blocked: BlockedResource[]): HTMLElement {
-  const sec = h("section", {}, h("h2", {}, "URL", h("span", { class: "count" }, String(urls.length))));
+  const sec = h("section", { class: "urls" }, h("h2", {}, "URL", h("span", { class: "count" }, String(urls.length))));
   if (!urls.length) {
     sec.append(h("p", { class: "none" }, "Aucune URL"));
     return sec;
@@ -727,6 +759,14 @@ function urlsSection(urls: UrlEntry[], blocked: BlockedResource[]): HTMLElement 
               )
             : null,
           u.unicode_host ? h("div", { class: "url-note" }, `Domaine réel : ${u.unicode_host}`) : null,
+          u.redirect
+            ? h(
+                "div",
+                { class: `url-note redirect${u.redirect.abused ? " bad" : ""}` },
+                `${u.redirect.abused ? "Redirecteur détourné" : "Lien réécrit"} (${u.redirect.service}) → `,
+                h("span", { class: "url-text" }, u.redirect.target),
+              )
+            : null,
           u.display_texts.length ? h("div", { class: "url-note" }, `Texte affiché : « ${u.display_texts.join(" » / « ")} »`) : null,
           h(
             "div",
@@ -781,6 +821,12 @@ const ATT_FLAGS: Record<string, [string, Severity]> = {
   risky_extension: ["Type à risque", "medium"],
   tnef: ["TNEF (winmail.dat)", "info"],
   zero_length: ["Vide", "info"],
+  credential_form: ["Faux formulaire de connexion", "high"],
+  exfiltration: ["Exfiltration", "high"],
+  obfuscated_script: ["Script obfusqué", "medium"],
+  auto_redirect: ["Redirection auto", "medium"],
+  recipient_prefill: ["Destinataire pré-rempli", "medium"],
+  qr_code: ["QR code", "medium"],
 };
 
 const URL_FLAGS: Record<string, [string, Severity]> = {
@@ -790,6 +836,8 @@ const URL_FLAGS: Record<string, [string, Severity]> = {
   text_target_mismatch: ["Texte ≠ destination", "medium"],
   raw_ip: ["Adresse IP", "medium"],
   punycode: ["Punycode", "medium"],
+  qr_code: ["Lu dans un QR code", "medium"],
+  redirector: ["Redirecteur détourné", "medium"],
 };
 
 const IOC_LABEL: Record<IocKind, string> = {

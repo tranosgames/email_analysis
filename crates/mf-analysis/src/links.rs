@@ -266,7 +266,18 @@ pub fn analyze(msg: &mut Message) {
             }
         }
     }
-    for u in &mut msg.urls {
+    // Destination finale de chaque URL (lien réécrit par Safe Links, Proofpoint…).
+    let finals: Vec<Option<String>> = msg
+        .urls
+        .iter()
+        .map(|u| {
+            let f = crate::redirects::final_target(&msg.urls, &u.url);
+            (f != u.url)
+                .then(|| host(f).map(|h| registrable(&h)))
+                .flatten()
+        })
+        .collect();
+    for (ui, u) in msg.urls.iter_mut().enumerate() {
         for (href, text) in &anchors {
             if (href == &u.url || href.starts_with(&u.url))
                 && !u.display_texts.contains(text)
@@ -280,7 +291,10 @@ pub fn analyze(msg: &mut Message) {
         let target_reg = registrable(&h);
         if u.display_texts.iter().any(|t| {
             DOMAIN_LIKE.as_ref().is_some_and(|r| r.is_match(t))
-                && host(t).is_some_and(|th| registrable(&th) != target_reg)
+                && host(t).is_some_and(|th| {
+                    let tr = registrable(&th);
+                    tr != target_reg && finals[ui].as_deref() != Some(tr.as_str())
+                })
         }) {
             flags.push(UrlFlag::TextTargetMismatch);
         }

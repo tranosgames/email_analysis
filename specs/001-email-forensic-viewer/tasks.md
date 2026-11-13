@@ -155,6 +155,14 @@ Workspace Cargo : `crates/mf-*/src/`, app : `apps/desktop/`, tests transverses :
 - [x] T124 [US1] WebAssembly : `report`, export des indicateurs ; bureau : `build_report`, `save_text` (dialogue d'enregistrement)
 - [x] T125 [US1] Interface : panneau « Analyse » (authentification + constats), badges sur fichiers et URL, section « Indicateurs », boutons Rapport et Exporter (FR-044) + e2e
 - [x] T126 [US1] Verdict de synthèse `crates/mf-analysis/src/verdict.rs` (poids par règle, seuils, garde-fous tromperie/authentification) + tests unitaires et corpus ; CLI, rapport HTML/JSON, bandeau et pastille de liste + e2e (FR-045)
+- [x] T127 [US1] QR codes : `crates/mf-analysis/src/qr.rs` (image + rqrr, limites de taille/mémoire, 40 images max), images jointes et `data:` du HTML ; règles `attachment_qr_code`, `url_qr_code` (FR-046)
+- [x] T128 [US1] Pièces jointes HTML/SVG : `crates/mf-analysis/src/htmlatt.rs` (formulaires, mot de passe, exfiltration, obfuscation + décodage `atob()`, redirections, destinataire pré-rempli) ; règles `attachment_credential_form`, `attachment_exfiltration`, `attachment_obfuscated_script`, `attachment_auto_redirect`, `attachment_recipient_prefill` (FR-047)
+- [x] T129 [US1] Redirections : `crates/mf-analysis/src/redirects.rs` (Safe Links, Proofpoint v2/v3, Google, Bing base64, Facebook, YouTube, LinkedIn, générique ; chaînes imbriquées) ; règle `url_redirector_abuse` ; pas de faux « texte ≠ destination » derrière une réécriture ; interface, rapport, corpus `quishing-html-attachment.eml`, e2e (FR-048)
+
+### Plus tard (idées retenues, non planifiées)
+
+- [ ] T130 [P] Listes personnalisées : domaines légitimes de l'organisation (usurpation interne), listes de domaines / IP / empreintes malveillants importées (CSV, MISP), règles de détection propres à l'équipe ; stockées localement, prises en compte par les constats et le verdict
+- [ ] T131 Contenu des archives ZIP et des documents Office (macros VBA, URL des PDF/Office) — écarté pour l'instant : risque de consommation mémoire excessive sur le poste
 
 **Checkpoint**: User Story 1 fonctionnelle et testable seule — MVP « lecteur forensic sûr ».
 
@@ -390,7 +398,7 @@ Task: "T031 Sanitisation HTML dans crates/mf-analysis/src/html.rs"
 | FR-037 | T091, T092, T097 | | FR-038 | T098–T104 |
 | FR-039 | T105–T110 | | FR-040 | T116, T117 |
 | FR-041 | T113, T114, T116 | | FR-042 | T111, T112, T115, T116 |
-| FR-043 | T120, T122, T125 | | FR-044 | T123–T125 | | FR-045 | T126 |
+| FR-043 | T120, T122, T125 | | FR-044 | T123–T125 | | FR-045 | T126 | | FR-046 | T127 | | FR-047 | T128 | | FR-048 | T129 |
 
 ---
 

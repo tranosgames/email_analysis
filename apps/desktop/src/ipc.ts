@@ -32,6 +32,27 @@ export interface Attachment {
   detected_type: string | null;
   detected_mime: string | null;
   flags: string[];
+  /** Contenu des QR codes de l'image (FR-046). */
+  qr_codes: string[];
+  /** Analyse statique d'une pièce HTML/SVG (FR-047). */
+  html_report: HtmlAttachmentReport | null;
+}
+
+export interface HtmlAttachmentReport {
+  password_fields: number;
+  forms: { method: string; action: string | null }[];
+  exfiltration: string[];
+  obfuscation: string[];
+  redirects: string[];
+  recipient_prefill: string[];
+  decoded_payloads: number;
+}
+
+/** Redirection décodée sans suivre le lien (FR-048). */
+export interface Redirect {
+  service: string;
+  target: string;
+  abused: boolean;
 }
 
 export type UrlLocation =
@@ -39,7 +60,10 @@ export type UrlLocation =
   | { kind: "body_text" }
   | { kind: "html_attribute"; attribute: string }
   | { kind: "html_text" }
-  | { kind: "html_css" };
+  | { kind: "html_css" }
+  | { kind: "attachment"; filename: string }
+  | { kind: "qr_code"; source: string }
+  | { kind: "redirect"; from: string };
 
 export interface UrlEntry {
   url: string;
@@ -51,6 +75,7 @@ export interface UrlEntry {
   unicode_host: string | null;
   lookalike_of: string | null;
   flags: string[];
+  redirect: Redirect | null;
 }
 
 export type BlockedKind = "image" | "background" | "stylesheet" | "script" | "frame" | "media" | "object" | "other";

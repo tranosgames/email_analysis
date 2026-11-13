@@ -22,11 +22,19 @@ fn weight(rule: &str) -> (u32, bool) {
         | "url_credentials"
         | "attachment_executable"
         | "attachment_double_extension"
-        | "attachment_bidi_name" => (40, true),
+        | "attachment_bidi_name"
+        | "attachment_credential_form"
+        | "attachment_exfiltration" => (40, true),
         "attachment_type_mismatch" | "attachment_macros" => (30, true),
         "auth_dmarc_fail" | "auth_dmarc_permerror" | "attachment_encrypted_archive" => (30, false),
         "link_text_target_mismatch" | "display_name_brand" => (20, true),
         "attachment_html" | "url_raw_ip" => (20, true),
+        "attachment_obfuscated_script"
+        | "attachment_auto_redirect"
+        | "attachment_recipient_prefill"
+        | "url_redirector_abuse"
+        | "url_qr_code" => (20, true),
+        "attachment_qr_code" => (10, true),
         "auth_spf_fail"
         | "auth_spf_permerror"
         | "auth_dkim_fail"

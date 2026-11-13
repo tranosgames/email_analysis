@@ -177,6 +177,8 @@ fn convert(msg: &mail_parser::Message<'_>, raw: &[u8], depth: usize) -> Message 
             detected_type: None,
             detected_mime: None,
             flags: Vec::new(),
+            qr_codes: Vec::new(),
+            html_report: None,
             data,
         });
     }

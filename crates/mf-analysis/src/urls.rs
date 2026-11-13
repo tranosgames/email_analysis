@@ -60,6 +60,7 @@ impl Collector {
             unicode_host: None,
             lookalike_of: None,
             flags: Vec::new(),
+            redirect: None,
         });
     }
 
@@ -80,6 +81,39 @@ impl Collector {
             }
         }
     }
+}
+
+/// Espaces de noms XML : jamais des destinations.
+const NAMESPACE_HOSTS: [&str; 3] = ["www.w3.org", "w3.org", "schemas.xmlsoap.org"];
+
+/// Ajoute des URL trouvées hors du message (pièces jointes, QR codes) : `text` = texte libre
+/// à fouiller, sinon l'URL elle-même.
+pub fn append(entries: &mut Vec<UrlEntry>, items: Vec<(String, UrlLocation, bool)>) {
+    let mut c = Collector {
+        entries: std::mem::take(entries),
+    };
+    for (s, loc, is_text) in items {
+        if is_text {
+            let before = c.entries.len();
+            c.scan_text(&s, &loc);
+            // Les espaces de noms XML/SVG ajoutés par cette fouille sont retirés.
+            let mut i = before;
+            while i < c.entries.len() {
+                if c.entries[i]
+                    .host
+                    .as_deref()
+                    .is_some_and(|h| NAMESPACE_HOSTS.contains(&h))
+                {
+                    c.entries.remove(i);
+                } else {
+                    i += 1;
+                }
+            }
+        } else {
+            c.add(&s, loc);
+        }
+    }
+    *entries = c.entries;
 }
 
 /// Extrait les URL uniques d'un message, dans l'ordre de première apparition.

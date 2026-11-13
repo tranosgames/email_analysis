@@ -52,6 +52,10 @@ regex = "1"
 base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
 msg_parser = "0.3"
+# Décodage des QR codes (quishing, FR-046) : décodeurs d'image purs Rust, sans E/S.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp"] }
+rqrr = { version = "0.11", default-features = false }
+percent-encoding = "2"
 
 # Moteur WebAssembly de la version web (feature 003) : taille minimale.
 [profile.wasm]

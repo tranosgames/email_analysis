@@ -105,7 +105,7 @@ def main() -> int:
             hashes = files.locator(".file-hash").all_inner_texts()
             check(all(a["sha256"] in h for a, h in zip(msg["attachments"], hashes)), f"{name} : SHA-256 des fichiers")
             check(all(a["md5"] in h for a, h in zip(msg["attachments"], hashes)), f"{name} : MD5 visibles sans survol")
-            urls = page.locator(".inventory .url-text").all_inner_texts()
+            urls = page.locator(".inventory section.urls > ul > li > .url-text").all_inner_texts()
             # FR-042 : panneau d'acheminement au-dessus des fichiers, expéditeur en titre.
             route = msg.get("route") or {}
             check(page.locator(".inventory > section").first.get_attribute("class") == "route", f"{name} : acheminement en tête du panneau")
@@ -233,6 +233,21 @@ def main() -> int:
             page.click(".export-all")
         allcsv = pathlib.Path(dl.value.path()).read_text(encoding="utf-8-sig")
         check(allcsv.count("\n") > csv.count("\n"), "export des indicateurs de tous les messages")
+
+        # FR-046 à FR-048 : QR codes, page HTML jointe, redirections décodées.
+        page.locator(".message-item", has_text="Contrat_2026").click()
+        page.wait_for_selector("section.verdict.v-malicious")
+        inv = page.locator(".inventory").inner_text()
+        check("quish-m365.example/scan" in page.locator("section.files").inner_text(), "QR code de l'image jointe décodé")
+        check("QR code dans l'image n° 1 intégrée au HTML" in inv, "QR code d'une image data: décodé")
+        rep = page.locator(".html-report").inner_text()
+        check("collect.evil-kit.example/next.php" in rep and "bot Telegram" in rep, "page HTML jointe : formulaire et exfiltration")
+        check("victim@victim.example" in rep, "page HTML jointe : destinataire pré-rempli")
+        check("Redirecteur détourné (Bing)" in inv and "login.evil-kit.example/auth" in inv, "redirection Bing décodée")
+        check("Lien réécrit (Microsoft Safe Links)" in inv, "Safe Links décodé")
+        check(page.locator(".finding", has_text="Texte du lien différent").count() == 0, "Safe Links : pas de faux « texte ≠ destination »")
+        page.locator("section.files").scroll_into_view_if_needed()
+        page.screenshot(path=str(APP / "test-results" / "web-quishing.png"))
 
         # Hors-ligne : un nouveau dépôt fonctionne toujours (doublon détecté).
         ctx.set_offline(True)

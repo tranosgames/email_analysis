@@ -98,8 +98,20 @@ pub fn verdict_label(level: mf_core::VerdictLevel) -> (&'static str, &'static st
 fn defang_text(s: &str) -> String {
     s.split(' ')
         .map(|w| {
-            if w.contains('.') && w.chars().any(|c| c.is_ascii_alphabetic()) && !w.ends_with('.') {
-                w.replace('.', "[.]")
+            let core = w.trim_end_matches(['.', ',', ';', ')', '»']);
+            let tail = &w[core.len()..];
+            let lower = core.to_ascii_lowercase();
+            if lower.starts_with("http://")
+                || lower.starts_with("https://")
+                || lower.starts_with("www.")
+            {
+                format!("{}{tail}", mf_analysis::urls::defang(core))
+            } else if core.contains('.')
+                && core.chars().any(|c| c.is_ascii_alphabetic())
+                && !core.ends_with('.')
+                && !core.contains("[.]")
+            {
+                format!("{}{tail}", core.replace('.', "[.]").replace('@', "[@]"))
             } else {
                 w.to_string()
             }
@@ -343,7 +355,7 @@ pub fn report_html(
                 sev_label(f.severity),
                 esc(&f.title),
                 esc(&f.rule),
-                esc(&f.detail),
+                esc(&defang_text(&f.detail)),
                 esc(&f.refs.iter().map(ref_label).collect::<Vec<_>>().join(" ; "))
             );
         }
@@ -507,6 +519,48 @@ pub fn report_html(
                 esc(&a.md5),
                 esc(&flags)
             );
+            let mut details: Vec<String> = a
+                .qr_codes
+                .iter()
+                .map(|c| {
+                    format!(
+                        "QR code : <span class=\"mono\">{}</span>",
+                        esc(&mf_analysis::urls::defang(c))
+                    )
+                })
+                .collect();
+            if let Some(r) = &a.html_report {
+                if r.password_fields > 0 {
+                    details.push(format!("{} champ(s) de mot de passe", r.password_fields));
+                }
+                for f in &r.forms {
+                    details.push(format!(
+                        "Formulaire {} → <span class=\"mono\">{}</span>",
+                        esc(&f.method.to_uppercase()),
+                        esc(&f
+                            .action
+                            .as_deref()
+                            .map_or_else(|| "(script)".to_string(), mf_analysis::urls::defang))
+                    ));
+                }
+                for (label, v) in [
+                    ("Exfiltration", &r.exfiltration),
+                    ("Obfuscation", &r.obfuscation),
+                    ("Redirection", &r.redirects),
+                    ("Destinataire intégré", &r.recipient_prefill),
+                ] {
+                    if !v.is_empty() {
+                        details.push(format!("{label} : {}", esc(&defang_text(&v.join(", ")))));
+                    }
+                }
+            }
+            if !details.is_empty() {
+                let _ = write!(
+                    h,
+                    "<tr><td></td><td colspan=\"5\" class=\"note\">{}</td></tr>",
+                    details.join("<br>")
+                );
+            }
         }
         h.push_str("</table>");
     }
@@ -524,9 +578,22 @@ pub fn report_html(
                 .join(", ");
             let _ = write!(
                 h,
-                "<tr><td class=\"mono\">{}</td><td>{}</td><td>{}{}</td><td class=\"note\">{}</td></tr>",
+                "<tr><td class=\"mono\">{}{}</td><td>{}</td><td>{}{}</td><td class=\"note\">{}</td></tr>",
                 esc(&u.defanged),
-                esc(&u.display_texts.join(" / ")),
+                u.redirect
+                    .as_ref()
+                    .map(|r| format!(
+                        "<br><span class=\"note\">{} ({}) → {}</span>",
+                        if r.abused {
+                            "redirecteur détourné"
+                        } else {
+                            "lien réécrit"
+                        },
+                        esc(&r.service),
+                        esc(&mf_analysis::urls::defang(&r.target))
+                    ))
+                    .unwrap_or_default(),
+                esc(&defang_text(&u.display_texts.join(" / "))),
                 esc(&flags),
                 u.lookalike_of
                     .as_deref()

@@ -16,3 +16,6 @@ mail-parser.workspace = true
 chrono.workspace = true
 sha2.workspace = true
 sha1.workspace = true
+image.workspace = true
+rqrr.workspace = true
+percent-encoding.workspace = true
