@@ -121,7 +121,12 @@ fn walk(store: Rc<dyn Store>, r: &mut Report) -> io::Result<()> {
                             r.attachments += a.rows_matrix().count() as u64;
                         }
                     }
-                    Err(_) => r.errors += 1,
+                    Err(e) => {
+                        r.errors += 1;
+                        if r.errors <= 3 && std::env::var("PST_DEBUG").is_ok() {
+                            eprintln!("  erreur message : {e:?}");
+                        }
+                    }
                 }
             }
         }

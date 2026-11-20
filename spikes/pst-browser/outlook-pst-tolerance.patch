@@ -1,0 +1,55 @@
+diff -ru a/src/ltp/heap.rs b/src/ltp/heap.rs
+--- a/src/ltp/heap.rs	2006-07-24 01:21:28.000000000 +0000
++++ b/src/ltp/heap.rs	2026-11-20 09:38:32.613787499 +0000
+@@ -407,9 +407,9 @@
+             return Err(LtpError::InvalidHeapPageAllocCount(alloc_count));
+         }
+ 
+-        if free_count != page_map.free_count {
+-            return Err(LtpError::InvalidHeapPageFreeCount(free_count));
+-        }
++        // Tolérance : certains outils d'export écrivent un compteur d'espace libre faux ; il ne
++        // sert qu'à l'écriture, la lecture n'en dépend pas.
++        let _ = free_count;
+ 
+         Ok(page_map)
+     }
+diff -ru a/src/messaging/message.rs b/src/messaging/message.rs
+--- a/src/messaging/message.rs	2006-07-24 01:21:28.000000000 +0000
++++ b/src/messaging/message.rs	2026-11-20 09:38:32.613959569 +0000
+@@ -253,9 +253,8 @@
+                 *root.block_btree(),
+             )?;
+ 
+-            let sub_node = node
+-                .sub_node()
+-                .ok_or(MessagingError::MessageSubNodeTreeNotFound)?;
++            // Un message sans sous-nœuds (ni destinataires ni pièces jointes stockés à part) est valide.
++            let sub_node = node.sub_node();
+ 
+             let mut page_cache = pst.block_cache();
+             let data = node.data();
+@@ -282,12 +281,17 @@
+                 .collect::<io::Result<BTreeMap<_, _>>>()?;
+             let properties = MessageProperties { properties };
+ 
+-            let block = block_btree.find_entry(file, sub_node.search_key(), &mut page_cache)?;
+-            let sub_nodes = SubNodeTree::<Pst>::read(file, &block)?;
+-            let sub_nodes: BTreeMap<_, _> = sub_nodes
+-                .entries(file, &block_btree, &mut page_cache)?
+-                .map(|entry| (entry.node(), entry))
+-                .collect();
++            let sub_nodes: BTreeMap<_, _> = match sub_node {
++                Some(sub_node) => {
++                    let block = block_btree.find_entry(file, sub_node.search_key(), &mut page_cache)?;
++                    let sub_nodes = SubNodeTree::<Pst>::read(file, &block)?;
++                    sub_nodes
++                        .entries(file, &block_btree, &mut page_cache)?
++                        .map(|entry| (entry.node(), entry))
++                        .collect()
++                }
++                None => BTreeMap::new(),
++            };
+ 
+             (properties, sub_nodes)
+         };
