@@ -15,18 +15,17 @@ impl BoxSession {
     pub fn list(&self, folder: FolderId, offset: usize, limit: usize) -> Vec<ItemSummary>;
     pub fn open_item(&self, id: u32, keys: &Keyring) -> Result<Analyzed, EngineError>; // FR-004, FR-005
     pub fn hash_step(&mut self, budget_bytes: u64) -> HashProgress; // FR-002, appelé en boucle
-    pub fn analyze_step(&mut self, budget_items: usize) -> AnalysisProgress; // FR-006
-    pub fn filter(&self, f: &BoxFilter) -> Vec<ItemSummary>;        // FR-007
-    pub fn search_step(&mut self, query: &str, budget_items: usize) -> SearchProgress;
-    pub fn iocs(&self) -> Vec<Ioc>;                                 // FR-013
+    pub fn filter(&mut self, f: &BoxFilter) -> Vec<ItemSummary>;    // FR-007 : tables de dossiers seulement
+    pub fn analyzed(&self) -> Vec<u32>;                             // messages déjà ouverts
+    pub fn iocs(&self) -> Vec<Ioc>;                                 // FR-013 : messages ouverts
     pub fn export_msg(&self, id: u32) -> Result<ExportedFile, EngineError>; // FR-008
     pub fn export_eml(&self, id: u32) -> Result<ExportedFile, EngineError>;
 }
 ```
 
-Les fonctions `*_step` font une quantité bornée de travail et rendent la main : la pause est
-l'absence d'appel, l'annulation l'abandon de la recherche. Ainsi le même code sert le thread natif
-et le Worker, sans primitives de concurrence.
+`open_item` est le seul appel qui lit un message (FR-006) ; son résultat est gardé pour la session.
+`hash_step` fait une quantité bornée de travail et rend la main, pour que le calcul d'empreinte ne
+bloque ni le thread natif ni le Worker.
 
 ## Commandes Tauri
 
@@ -36,9 +35,9 @@ et le Worker, sans primitives de concurrence.
 | `box_list(box_id, folder, offset, limit)` | `ItemSummary[]` |
 | `box_item(box_id, id)` | `Analyzed` (comme `open_paths`) |
 | `box_filter(box_id, filter)` | `ItemSummary[]` |
-| `box_search(box_id, query)` / `box_search_cancel` | événements `box-search` |
-| `box_analyze(box_id, run: bool)` | événements `box-progress` `{hash, analysis}` |
-| `box_iocs(box_id)` | `IocGroup` |
+| `box_iocs(box_id)` | `IocGroup` (messages ouverts) |
+
+Progression de l'empreinte : événement `box-hash` `{done, total}`.
 | `box_export(box_id, ids, format, dest)` | manifeste |
 | `box_close(box_id)` | — |
 

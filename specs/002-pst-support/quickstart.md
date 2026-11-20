@@ -28,9 +28,10 @@ sha256sum -c /tmp/avant                             # OK
 1. Ouvrir `enron-29.pst` : l'arborescence s'affiche, l'empreinte se calcule avec une progression.
 2. Ouvrir « Inbox », puis un message : toutes les vues de la feature 001 ; provenance
    `enron-29.pst › … › Inbox` affichée et reprise dans le rapport.
-3. Laisser l'analyse de la boîte se terminer ; filtrer « Malveillant » puis « avec pièce jointe » :
-   résultat conforme à la liste annotée `tests/corpus/pst/expected.json`.
-4. Rechercher un mot connu du corps d'un message : il est trouvé ; annuler une recherche en cours.
+3. Filtrer toute la boîte par nom d'expéditeur et période, puis « avec pièce jointe » : résultat
+   conforme à `tests/corpus/pst/expected.json`, et compteur de messages lus à zéro.
+4. Ouvrir trois messages : leur verdict apparaît dans la liste ; « analysés seulement » les affiche ;
+   l'export des indicateurs ne contient que ces trois messages.
 
 ## Scénario 4 — Version web (US1, US2, SC-004)
 
@@ -40,7 +41,7 @@ mémoire de l'onglet sous 300 Mo ; résultats identiques à l'application de bur
 ## Scénario 5 — Export (US3, SC-006)
 
 ```console
-mf pst export enron-29.pst --filter "attachments" --out /tmp/pieces --format msg
+mf pst export enron-29.pst --id <10 identifiants> --out /tmp/pieces --format msg
 mf show /tmp/pieces/*.msg --json        # champs, en-têtes de transport, empreintes des PJ identiques
 mf pst export enron-29.pst --id … --out /tmp/pieces-dans-la-preuve   # refusé si dans le dossier de la preuve
 ```
@@ -48,5 +49,5 @@ mf pst export enron-29.pst --id … --out /tmp/pieces-dans-la-preuve   # refusé
 ## Scénario 6 — Performances (SC-003)
 
 `mf pst bench <grosse boîte>` en natif ; mesure équivalente dans la page web : arborescence < 10 s
-(5 Go), parcours < 1 min natif / 3 min web pour 50 000 messages. À exécuter sur une boîte fournie
+(5 Go), liste d'un dossier de 10 000 messages < 2 s natif / 5 s web, message ouvert < 2 s. À exécuter sur une boîte fournie
 par l'utilisateur (aucun PST public de cette taille n'est disponible dans le corpus).

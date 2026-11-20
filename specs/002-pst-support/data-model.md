@@ -43,20 +43,22 @@ Implémentations : `FileSource` (natif, `pread`), `BlobSource` (web, `FileReader
 | `item_count`, `unread_count` | u32 | |
 | `children` | `[FolderId]` | |
 
-## ItemSummary *(ligne de liste ; ≈ 0,5 Ko)*
+## ItemSummary *(ligne de liste, lue dans la table du dossier ; ≈ 0,5 Ko)*
 
 | Champ | Type | Note |
 |---|---|---|
 | `id` | `u32` | NID de l'élément |
 | `folder` | `FolderId` | |
 | `message_class` | string | `IPM.Note`, `IPM.Appointment`… |
-| `subject`, `from`, `to` | string | adresses SMTP quand elles existent |
-| `sent`, `received` | date UTC ? | |
-| `size` | u64 | `PR_MESSAGE_SIZE` |
-| `attachments` | u16 | |
-| `attachment_kinds` | `[string]` | types réels (après analyse rapide) |
-| `verdict` | `VerdictLevel?` | absent tant que non analysé |
-| `verdict_depth` | `quick` \| `full` | |
+| `subject` | string | `0x0037` |
+| `from_name` | string | nom affiché, `0x0042` (l'adresse n'est pas dans la table) |
+| `to`, `cc` | string | destinataires affichés, `0x0E04`, `0x0E03` |
+| `sent`, `received` | date UTC ? | `0x0039`, `0x0E06` |
+| `size` | u32 | `0x0E08` |
+| `has_attachments` | bool | drapeau de `0x0E07` |
+| `message_id` | string? | `0x1035` |
+| `from_address` | string? | renseignée quand le message a été ouvert |
+| `verdict` | `VerdictLevel?` | renseigné quand le message a été ouvert |
 
 ## Provenance
 
@@ -74,20 +76,13 @@ les indicateurs et le manifeste d'export.
 
 ## BoxIndex *(session)*
 
-`Vec<ItemSummary>` + résultats d'analyse rapide par élément (`Verdict`, `Ioc` fusionnés avec leurs
-provenances). État d'analyse : `idle` \| `running{done,total}` \| `paused` \| `done`.
+`ItemSummary` des dossiers déjà listés (tables lues à la demande) + `Analyzed` des seuls messages
+ouverts (verdict, indicateurs avec provenances). Aucune lecture de message en arrière-plan.
 
-**Filtre** (`BoxFilter`) : `verdict[]`, `from`, `to`, `domain`, `subject`, `after`, `before`,
-`has_attachments`, `attachment_kind[]`, `folder?` — tous combinés en ET ; texte insensible à la
-casse et aux accents. **Recherche dans le corps** : requête + progression + annulation, renvoie des
-`id`.
-
-## AnalysisDepth *(mf-analysis)*
-
-| Niveau | Contenu |
-|---|---|
-| `Quick` | en-têtes, acheminement, SPF/DKIM/DMARC (verdicts lus), liens (extraction, sosies, redirections), pièces jointes (type réel et drapeaux), constats, verdict, indicateurs |
-| `Full` | `Quick` + QR codes, pages HTML jointes, signatures PGP/S/MIME, recalcul de l'empreinte DKIM, rendu HTML |
+**Filtre** (`BoxFilter`) : `from_name`, `to`, `subject`, `message_id`, `after`, `before`,
+`min_size`, `max_size`, `has_attachments`, `folder?` (sinon toute la boîte) — lus dans les tables ;
+`analyzed_only`, `verdict[]`, `from_address`, `from_domain` — sur les messages ouverts. Tous
+combinés en ET ; texte insensible à la casse et aux accents.
 
 ## UnreadableItem
 

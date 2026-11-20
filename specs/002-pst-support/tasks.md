@@ -76,27 +76,27 @@ corpus : `tests/corpus/pst/`. Numérotation propre à la feature, préfixe `P`.
 
 ---
 
-## Phase 4: User Story 2 — Trier la boîte : verdicts, recherche, filtres (Priority: P1)
+## Phase 4: User Story 2 — Retrouver un message sans tout lire (Priority: P1)
 
-**Goal**: analyse de toute la boîte en arrière-plan, filtres, recherche dans le corps, indicateurs de boîte.
+**Goal**: filtres sur les tables de dossiers, sans ouvrir aucun message ; verdicts et indicateurs des seuls messages ouverts.
 
 **Independent Test**: quickstart scénario 3 (étapes 3 et 4).
 
 ### Tests
 
-- [ ] P022 [P] [US2] `crates/mf-analysis/tests/depth.rs` : sur tout le corpus 001, l'analyse rapide produit les mêmes constats que l'analyse complète, hors règles réservées au niveau complet (QR, pages HTML, signatures, DKIM) ; verdict identique sauf cas listés
-- [ ] P023 [P] [US2] `crates/mf-pst/tests/filter.rs` : filtres combinés sur Enron 29 Mo conformes à la liste annotée de `expected.json` ; recherche dans le corps d'un mot connu ; annulation
-- [ ] P024 [P] [US2] Bench reproductible `mf pst bench` + test de non-régression : analyse rapide < 1 ms/message en natif sur Enron 29 Mo (machine de CI, marge documentée)
+- [ ] P022 [P] [US2] `crates/mf-pst/tests/filter.rs` : filtres combinés (nom d'expéditeur, destinataire, objet, période, taille, pièces jointes, Message-ID) sur Enron 29 Mo conformes à `expected.json`, **compteur de messages lus à zéro** après filtrage de toute la boîte
+- [ ] P023 [P] [US2] `crates/mf-pst/tests/opened.rs` : ouvrir 3 éléments → seuls ces 3 sont lus (compteur à 3), leur verdict et leur adresse d'expéditeur apparaissent dans leurs `ItemSummary`, « analysés seulement » et le filtre par verdict ou domaine ne portent que sur eux, les indicateurs exportés ne viennent que d'eux ; rouvrir un élément ne le relit pas
+- [ ] P024 [P] [US2] Bench reproductible `mf pst bench` : temps d'arborescence, de liste du plus gros dossier, de filtre de toute la boîte et d'ouverture d'un message, octets lus ; seuils de SC-003 et SC-005 vérifiés sur Enron 29 Mo
 
 ### Implementation
 
-- [ ] P025 [US2] Profiler l'analyse actuelle (coût fixe de 3 à 4 ms par message mesuré) et supprimer les coûts d'initialisation répétés (nettoyeur HTML, expressions, tables)
-- [ ] P026 [US2] `crates/mf-analysis` : `AnalysisDepth::{Quick, Full}` ; `analyze_with` reçoit la profondeur ; le verdict indique sa profondeur
-- [ ] P027 [US2] `crates/mf-pst/src/index.rs` : `BoxIndex`, `analyze_step(budget)` (pause = absence d'appel), `filter`, `search_step`, `iocs()` fusionnés avec provenances
-- [ ] P028 [US2] CLI : `mf pst analyze|grep|iocs` et filtres de `mf pst ls`
-- [ ] P029 [US2] Tauri + interface : progression de l'analyse (pause/reprise), pastilles de verdict dans la liste au fil de l'eau, barre de filtres, recherche avec annulation, export des indicateurs de la boîte ; analyse complète à l'ouverture d'un élément, liste mise à jour si le verdict change
+- [ ] P025 [US2] `crates/mf-pst/src/index.rs` : `BoxIndex` — tables de dossiers lues à la demande et gardées, filtre linéaire (`BoxFilter`), cache des éléments ouverts (`Analyzed`), `iocs()` fusionnés avec provenances
+- [ ] P026 [US2] Compteur des messages lus exposé par la session (tests, CLI `info`, interface « 3 messages lus sur 2 178 ») : preuve que rien d'autre n'est lu (FR-006)
+- [ ] P027 [US2] CLI : filtres de `mf pst ls`, `mf pst iocs --id`
+- [ ] P028 [US2] Tauri + interface : barre de filtres (dossier ou toute la boîte), tri des colonnes, pastille de verdict sur les messages ouverts, « analysés seulement », export des indicateurs des messages analysés
+- [ ] P029 [US2] Profiler l'analyse complète d'un message (coût fixe de 3 à 4 ms mesuré) et supprimer les initialisations répétées (nettoyeur HTML, expressions, tables) — non bloquant
 
-**Checkpoint**: US1 et US2 complètes sur le bureau et en CLI
+**Checkpoint**: US1 et US2 complètes sur le bureau et en CLI ; aucun message lu sans clic
 
 ---
 
@@ -177,7 +177,7 @@ corpus : `tests/corpus/pst/`. Numérotation propre à la feature, préfixe `P`.
 ## Implementation Strategy
 
 1. **MVP** : Phases 1 → 3 (une boîte PST se lit entièrement, CLI et bureau). Démontrer.
-2. **Tri** : Phase 4 (verdicts de boîte, filtres) — ce qui rend un PST exploitable en enquête.
+2. **Tri** : Phase 4 (filtres sur les tables de dossiers, verdicts des messages ouverts).
 3. **Web** : Phase 5 (le prototype a levé le risque principal).
 4. **OST** : Phase 6, risque le plus élevé, isolé.
 5. **Export** : Phase 7, puis finitions.
@@ -191,18 +191,18 @@ corpus : `tests/corpus/pst/`. Numérotation propre à la feature, préfixe `P`.
 | FR-003 | P011, P020 |
 | FR-004 | P010, P015, P017, P020 |
 | FR-005 | P009, P015, P018, P020 |
-| FR-006 | P026, P027, P029 |
-| FR-007 | P023, P027–P029 |
+| FR-006 | P022, P023, P025, P026 |
+| FR-007 | P022, P025, P027, P028 |
 | FR-008 | P037–P041 |
 | FR-009 | P007, P011, P020, P036 |
 | FR-010 | P014, P018, P028, P040 |
 | FR-011 | P030–P033 |
 | FR-012 | P011 |
-| FR-013 | P027–P029 |
+| FR-013 | P023, P025, P027, P028 |
 | FR-014 | P047 (ultérieur) |
 | SC-001 | P013, P037 |
 | SC-002 | P005, P034 |
 | SC-003 | P024, P045 |
 | SC-004 | P033 |
-| SC-005 | P023 |
+| SC-005 | P022, P024 |
 | SC-006 | P037 |

@@ -58,29 +58,33 @@ sur le corpus de la feature 001.
   sans duplication, et l'analyse de la feature 001 fonctionne telle quelle.
 - **Alternative rejetée** : seconde conversion propre au PST (double maintenance, divergences).
 
-## R5 — Analyse de la boîte en deux niveaux
+## R5 — Ne lire que ce que l'analyste ouvre
 
-- **Mesure** : le moteur actuel analyse un message du corpus en 3 à 4 ms hors gros contenus, et
-  jusqu'à 80 ms pour un `.msg` de 840 Ko riche en images (décodage des QR codes, nettoyage HTML).
-  Extrapolation pour 50 000 messages : ~5 min en natif, ~30 min dans le navigateur — trop long.
-- **Décision** : en arrière-plan, une **analyse rapide** par message : en-têtes, authentification,
-  acheminement, liens et pièces jointes (types, drapeaux), verdict, indicateurs — **sans** décodage
-  d'images, pages HTML jointes, signatures ni recalcul DKIM. L'**analyse complète** s'exécute à
-  l'ouverture d'un message, et peut être lancée sur une sélection. Le verdict de l'analyse rapide est
-  marqué comme tel ; s'il diffère après analyse complète, la liste est mise à jour.
-- **Objectif** : < 1 ms par message en analyse rapide (natif), soit < 1 min pour 50 000 messages, et
-  < 5 min dans le navigateur. Profilage avant optimisation (coût fixe actuel suspect : construction
-  des nettoyeurs HTML et des expressions à chaque appel).
+- **Décision (clarification 2026-11-20)** : aucune lecture des messages en arrière-plan. Trois
+  niveaux de lecture, du plus léger au plus lourd :
+  1. **ouverture de la boîte** : en-tête, arbres B et tables de hiérarchie des dossiers seulement ;
+  2. **ouverture d'un dossier** : sa table de contenu, qui fournit déjà la ligne de liste de chaque
+     message sans l'ouvrir ;
+  3. **clic sur un message** : lecture complète et **analyse complète** de la feature 001
+     (verdict, signatures, QR codes, pages HTML jointes…), une seule fois, résultat gardé en mémoire.
+- **Justification** : demande explicite de l'analyste ; coût proportionnel à ce qui est consulté ;
+  l'analyse complète actuelle (3 à 80 ms par message mesurés) est imperceptible sur un clic. La
+  double analyse « rapide / complète » envisagée pour un tri de toute la boîte devient inutile.
+- **Seule exception** : le calcul d'empreinte parcourt tout le fichier, octet par octet, sans
+  interpréter les messages (R7, Constitution I).
 
-## R6 — Index de boîte en mémoire, filtres linéaires
+## R6 — Filtres sur les tables de dossiers
 
-- **Décision** : un `ItemSummary` par élément (≈ 0,5 Ko) en mémoire ; filtres par parcours linéaire
-  (50 000 × 0,5 Ko = 25 Mo, parcours < 50 ms). Recherche dans le corps : nouveau parcours de la
-  boîte en flux, avec progression et annulation, sans stocker les corps.
-- **Justification** : Constitution VII — pas de moteur de recherche ni de base de données. Les
-  ordres de grandeur tiennent l'objectif SC-005 (< 1 s).
-- **Alternative rejetée** : index plein texte (tantivy) : mémoire ou disque importants, complexité ;
-  à reconsidérer seulement si la recherche dans le corps s'avère trop lente en usage réel.
+- **Constat (vérifié sur le PST Enron)** : la table de contenu d'un dossier porte 49 colonnes, dont
+  l'objet (`0x0037`), le nom affiché de l'expéditeur (`0x0042`), les destinataires affichés
+  (`0x0E04`, `0x0E03`), les dates d'envoi et de réception (`0x0039`, `0x0E06`), la taille
+  (`0x0E08`), les drapeaux dont « pièces jointes » (`0x0E07`), la classe (`0x001A`) et le
+  Message-ID (`0x1035`). **L'adresse email de l'expéditeur n'y figure pas.**
+- **Décision** : les lignes de liste (`ItemSummary`) sont lues dans ces tables ; filtres et tris par
+  parcours linéaire en mémoire (≈ 0,5 Ko par ligne, 25 Mo pour 50 000 messages). Filtrer toute la
+  boîte lit les tables de tous les dossiers, jamais les messages. Le filtre par adresse, domaine
+  d'expéditeur ou verdict ne porte que sur les messages déjà ouverts.
+- **Rejeté** : index plein texte, recherche dans les corps (exigerait de lire tous les messages).
 
 ## R7 — Empreinte d'un fichier de plusieurs Go
 

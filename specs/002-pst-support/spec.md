@@ -26,9 +26,12 @@ navigateur (`spikes/pst-browser/`) concluant ; « reprends la spécification PST
   enquête (poste de travail saisi).
 - Q: Ordre de livraison ? → A: Moteur et CLI d'abord, puis application de bureau, puis version web,
   le même moteur servant les trois.
-- Q: Faut-il analyser chaque message (verdict, constats, indicateurs) à l'échelle d'une boîte ? → A:
-  Oui, en arrière-plan après l'affichage de l'arborescence, avec progression, pause et reprise ;
-  la liste se trie et se filtre par verdict au fur et à mesure.
+- Q: Faut-il lire et analyser tous les messages de la boîte ? → A: **Non.** À l'ouverture, seule
+  l'arborescence des dossiers est lue ; à l'ouverture d'un dossier, sa liste vient de la table du
+  dossier, sans ouvrir les messages ; **seuls les messages sur lesquels l'analyste clique sont lus
+  et analysés** (analyse complète de la feature 001). Aucune lecture des messages en arrière-plan,
+  aucune recherche dans le corps de toute la boîte. Seul le calcul d'empreinte parcourt le fichier
+  entier, octet par octet, sans interpréter les messages (Constitution I).
 - Q: Format d'export ? → A: `.msg` en priorité : c'est le seul format qui reprend **à l'identique**
   les propriétés MAPI stockées dans le PST. L'export `.eml` est une **reconstruction** (le PST ne
   conserve pas le MIME d'origine) et est marqué comme tel.
@@ -44,7 +47,8 @@ web. L'arborescence des dossiers (Boîte de réception, Éléments envoyés, Él
 dossiers personnalisés) s'affiche en quelques secondes, avec le nombre d'éléments, pendant que
 l'empreinte du fichier se calcule. Il ouvre un dossier : la liste de ses messages apparaît dans la
 même interface que pour les EML/MSG ; chaque message s'ouvre avec toutes les vues existantes
-(verdict, analyse, signatures, en-têtes, pièces jointes, URL, indicateurs, rapport).
+(verdict, analyse, signatures, en-têtes, pièces jointes, URL, indicateurs, rapport). Seuls les
+messages ouverts sont lus : le reste de la boîte n'est jamais parcouru.
 
 **Why this priority**: Les PST/OST sont la forme habituelle des boîtes saisies ; sans navigation,
 aucune autre capacité n'a de valeur.
@@ -62,26 +66,28 @@ par dossier égale celui de libpff ; l'empreinte du fichier est identique avant 
 
 ---
 
-### User Story 2 - Trier la boîte : verdicts, recherche, filtres (Priority: P1)
+### User Story 2 - Retrouver un message sans tout lire (Priority: P1)
 
-Une fois l'arborescence affichée, l'outil analyse chaque message en arrière-plan (verdict,
-constats, indicateurs). L'analyste voit la progression, peut mettre en pause, et filtre la boîte
-entière : par verdict, expéditeur, destinataire, domaine, période, objet, présence de pièces
-jointes, type de pièce jointe, et par recherche dans le corps.
+Dans une boîte de dizaines de milliers de messages, l'analyste trie et filtre la liste d'un dossier,
+ou de toute la boîte, sur ce que les tables de dossiers contiennent déjà : nom affiché de
+l'expéditeur, destinataires, objet, dates, taille, présence de pièces jointes, Message-ID. Les
+tables ne contiennent pas l'adresse email de l'expéditeur : filtrer par adresse ou par domaine
+d'expéditeur ne vaut que pour les messages déjà ouverts. Il ouvre ensuite les messages qui
+l'intéressent ; leur verdict s'affiche dans la liste et la boîte garde la trace des messages déjà
+analysés, dont il peut exporter les indicateurs.
 
-**Why this priority**: Une boîte compte des dizaines de milliers de messages : le tri automatique
-est ce qui rend la lecture d'un PST possible en enquête.
+**Why this priority**: Une boîte compte des dizaines de milliers de messages : il faut pouvoir
+cibler sans les ouvrir tous.
 
-**Independent Test**: Sur le PST Enron de 2 178 messages, filtrer « Malveillant » et « avec pièce
-jointe » retourne exactement les messages attendus d'une liste annotée ; une recherche dans le corps
-retrouve un message connu.
+**Independent Test**: Sur le PST Enron de 2 178 messages, filtrer par nom d'expéditeur et période
+retourne exactement les messages attendus, sans qu'aucun message ne soit ouvert (compteur de
+messages lus à zéro) ; ouvrir trois messages affiche leur verdict dans la liste.
 
 **Acceptance Scenarios**:
 
-1. **Given** une boîte en cours d'analyse, **When** l'analyste filtre par verdict, **Then** la liste se met à jour au fil de l'analyse, et indique la part de la boîte déjà analysée.
-2. **Given** une boîte entièrement analysée, **When** un filtre sur les métadonnées est appliqué, **Then** le résultat s'affiche en moins de 1 s pour 50 000 messages.
-3. **Given** une recherche dans le corps des messages, **When** elle est lancée, **Then** elle parcourt la boîte avec une progression, peut être annulée, et liste les messages trouvés.
-4. **Given** une boîte analysée, **When** l'analyste exporte les indicateurs, **Then** ceux de toute la boîte sont fusionnés et dédoublonnés, avec la provenance de chaque occurrence.
+1. **Given** une boîte ouverte, **When** l'analyste filtre par nom d'expéditeur, destinataire, objet, période, taille, présence de pièces jointes ou Message-ID, **Then** le résultat s'affiche en moins de 1 s pour 50 000 messages, sans ouvrir aucun message.
+2. **Given** des messages déjà ouverts, **When** l'analyste revient à la liste, **Then** leur verdict y figure, et il peut n'afficher que les messages analysés, ou filtrer ceux-ci par verdict.
+3. **Given** des messages analysés, **When** l'analyste exporte les indicateurs, **Then** ceux de ces messages sont fusionnés et dédoublonnés, avec la provenance de chaque occurrence.
 
 ---
 
@@ -130,7 +136,7 @@ retenue ne fournit pas.
 - Éléments non courriel (rendez-vous, contacts, tâches, notes) : listés avec leur classe de message et leurs propriétés, sans verdict de courriel.
 - Message sans en-têtes de transport (brouillon, élément interne) : signalé comme pour un MSG ; le verdict reste « À vérifier ».
 - Pièces jointes de type « objet » (message embarqué) : ouvertes en cascade comme pour un MSG.
-- Page web rechargée : le fichier doit être déposé à nouveau (le navigateur ne conserve pas l'accès) ; l'analyse déjà faite est perdue, sauf export.
+- Page web rechargée : le fichier doit être déposé à nouveau (le navigateur ne conserve pas l'accès) ; les analyses des messages déjà ouverts sont perdues, sauf export.
 - Même PST déposé deux fois : doublon signalé par empreinte.
 
 ## Requirements *(mandatory)*
@@ -142,32 +148,32 @@ retenue ne fournit pas.
 - **FR-003**: Le système DOIT afficher l'arborescence complète des dossiers avec leurs compteurs, avant la fin du calcul d'empreinte et de l'analyse.
 - **FR-004**: Le système DOIT présenter chaque élément via le modèle unifié existant, avec toutes les vues de la feature 001 (verdict, analyse, signatures, en-têtes, pièces jointes, URL, indicateurs, rapport).
 - **FR-005**: Le système DOIT indiquer pour chaque élément sa provenance (chemin de dossier, identifiant interne de nœud), dans l'interface, la CLI et le rapport.
-- **FR-006**: Le système DOIT analyser en arrière-plan tous les messages de la boîte (verdict, constats, indicateurs), avec progression, pause et reprise.
-- **FR-007**: Le système DOIT filtrer la boîte par verdict, expéditeur, destinataire, domaine, période, objet, présence et type de pièce jointe, et rechercher dans le corps avec progression et annulation.
+- **FR-006**: Le système NE DOIT lire et analyser que les messages ouverts par l'analyste ; l'arborescence et les listes de dossiers proviennent des tables de dossiers, sans ouvrir les messages ; aucune lecture des messages en arrière-plan.
+- **FR-007**: Le système DOIT trier et filtrer la liste d'un dossier ou de toute la boîte par nom affiché de l'expéditeur, destinataires, objet, période, taille, présence de pièces jointes et Message-ID, à partir des seules tables de dossiers ; et filtrer les messages déjà analysés par verdict, adresse et domaine d'expéditeur.
 - **FR-008**: Le système DOIT exporter une sélection en `.msg` (propriétés MAPI reprises à l'identique) ou en `.eml` marqué comme reconstruit, avec pièces jointes et manifeste d'empreintes et de provenance.
 - **FR-009**: Le système DOIT poursuivre la lecture lorsqu'un élément ou un dossier est illisible, lister ces éléments avec la raison, et ne jamais les masquer silencieusement.
 - **FR-010**: Toutes les capacités DOIVENT être disponibles en CLI (`mf pst …`) avec sortie JSON.
 - **FR-011**: La version web DOIT lire le fichier par tranches dans un Worker, sans l'envoyer ni le charger entièrement, avec une mémoire bornée indépendante de sa taille.
 - **FR-012**: Le système DOIT signaler la protection par mot de passe et la méthode d'encodage d'une boîte dans ses métadonnées.
-- **FR-013**: Le système DOIT exporter les indicateurs de toute la boîte, fusionnés et dédoublonnés, avec la provenance de chaque occurrence.
+- **FR-013**: Le système DOIT exporter les indicateurs des messages analysés, fusionnés et dédoublonnés, avec la provenance de chaque occurrence.
 - **FR-014**: Le système DOIT lister séparément les éléments supprimés récupérables, marqués comme tels (P3, itération ultérieure).
 
 ### Key Entities
 
 - **Store** : la boîte PST/OST (preuve) — format (Unicode, ANSI, OST 4 Ko), encodage, protection par mot de passe, empreintes, statistiques, éléments illisibles.
 - **Folder** : dossier — identifiant de nœud, nom, chemin, type, compteurs, parent.
-- **ItemSummary** : ligne de liste — identifiant de nœud, dossier, classe de message, objet, expéditeur, destinataires, dates, taille, pièces jointes, verdict (une fois analysé).
+- **ItemSummary** : ligne de liste, lue dans la table du dossier — identifiant de nœud, dossier, classe de message, objet, nom affiché de l'expéditeur, destinataires affichés, dates, taille, présence de pièces jointes, Message-ID ; adresse de l'expéditeur et verdict une fois le message ouvert.
 - **Item** : élément complet, converti en `Message` du modèle unifié, avec sa provenance.
-- **Index de boîte** : résumés et résultats d'analyse de tous les éléments, en mémoire, jamais écrits à côté de la preuve.
+- **Index de boîte** : résumés issus des tables de dossiers et résultats d'analyse des seuls éléments ouverts, en mémoire, jamais écrits à côté de la preuve.
 - **Export** : fichiers produits + manifeste (provenance, empreintes, empreinte du PST source, nature « original » ou « reconstruit »).
 
 ## Success Criteria *(mandatory)*
 
 - **SC-001**: Empreinte du PST identique avant et après ouverture, analyse et export (100 % du corpus).
 - **SC-002**: Nombre de messages et de pièces jointes par dossier identique à libpff sur 100 % des PST/OST du corpus.
-- **SC-003**: Arborescence affichée en moins de 10 s pour un PST de 5 Go ; parcours complet de 50 000 messages en moins de 1 min en natif et 3 min dans le navigateur ; analyse complète (verdicts) en moins de 10 min.
+- **SC-003**: Arborescence affichée en moins de 10 s pour un PST de 5 Go ; liste d'un dossier de 10 000 messages en moins de 2 s (natif) et 5 s (navigateur) ; message ouvert et analysé en moins de 2 s.
 - **SC-004**: Mémoire de l'onglet web sous 300 Mo, quelle que soit la taille du PST.
-- **SC-005**: Filtre sur les métadonnées d'une boîte de 50 000 messages en moins de 1 s.
+- **SC-005**: Filtre sur les métadonnées d'une boîte de 50 000 messages en moins de 1 s, sans qu'aucun message ne soit lu.
 - **SC-006**: Les messages exportés en `.msg` puis rouverts sont identiques sur les champs clés, les en-têtes de transport et les empreintes des pièces jointes.
 
 ## Assumptions
