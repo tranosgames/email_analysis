@@ -1,145 +1,200 @@
-# MailForensics (`email_reader`)
+# Email Analysis
 
-Outil d'analyse forensic de courriels **EML** et **MSG** (PST/OST prévu), en **Rust**, avec une
-interface de bureau inspirée de [msg-reader](https://github.com/Rasalas/msg-reader) :
-glisser-déposer, liste des messages, panneau de lecture, épinglage, tri — enrichie de vues
-d'enquête (en-têtes et chaîne de relais, SPF/DKIM/DMARC, pièces jointes et imbrication, IOC,
-propriétés MAPI brutes, rapport et journal d'audit).
+**Déposez un courriel suspect. En une seconde : un verdict, les preuves qui le fondent, et tout ce qu'il faut pour agir.**
 
-Le projet est structuré avec [spec-kit](https://github.com/github/spec-kit) (Spec-Driven Development).
+Email Analysis est un outil d'investigation forensic pour les fichiers **`.eml`** et **`.msg`** (Outlook).
+Il lit le message comme un analyste le ferait — d'où il vient vraiment, qui l'a signé, où mènent
+ses liens, ce que cachent ses pièces jointes — et le restitue dans une interface claire, un rapport
+imprimable et des indicateurs prêts à bloquer.
 
-## Où en est-on
+Tout se passe **sur votre poste**. Aucun fichier n'est envoyé, aucune requête n'est émise, et la
+preuve n'est jamais modifiée.
 
-| Étape spec-kit | Feature 001 — EML/MSG | Feature 002 — PST |
-|---|---|---|
-| Feature 003 — version web | ✅ spec, plan, tâches, implémentation (W001–W021) | |
-| `/speckit-constitution` | ✅ `.specify/memory/constitution.md` v1.0.0 | (partagée) |
-| `/speckit-specify` | ✅ `spec.md` + checklist | ✅ `spec.md` (brouillon) |
-| `/speckit-clarify` | ✅ session 2026-10-14 : en-têtes, fichiers, URL (FR-035–037) | — |
-| `/speckit-plan` | ✅ `plan.md`, `research.md`, `data-model.md`, `contracts/`, `quickstart.md` | à faire |
-| `/speckit-tasks` | ✅ `tasks.md` (97 tâches, 9 phases) | à faire |
-| `/speckit-implement` | 🚧 lecture, en-têtes, fichiers, URL, acheminement, analyse (SPF/DKIM/DMARC, constats, PJ dangereuses, sosies), indicateurs, rapport (T091–T125) | — |
+![Un courriel de phishing analysé : verdict, constats classés par gravité, acheminement et empreintes de la preuve](docs/apercu.png)
 
-## Arborescence
+> **Essayer tout de suite** : la version web tourne entièrement dans le navigateur —
+> [tranosgames.github.io/email_analysis](https://tranosgames.github.io/email_analysis/).
+> Les fichiers que vous y déposez ne quittent pas votre machine.
 
-```text
-.specify/                 # spec-kit : constitution, templates, scripts
-.claude/skills/speckit-*  # commandes spec-kit pour Claude Code
-specs/
-├── 001-email-forensic-viewer/   # feature active (.specify/feature.json)
-└── 002-pst-support/
-crates/                   # moteur Rust : mf-core, mf-eml, mf-msg, mf-analysis, mf-sig (PGP/S/MIME), mf-engine, mf-report, mf-cli
-apps/desktop/             # interface TypeScript (src/) partagée : application Tauri 2 (src-tauri/) et version web
-crates/mf-wasm/           # moteur compilé en WebAssembly pour la version web
-tests/corpus/             # EML/MSG de référence (voir son README)
-spikes/crate-validation/  # prototype Phase 0 : valide mail-parser, cfb, msg_parser, outlook-pst
-```
+---
 
-## Pile technique (voir `specs/001-email-forensic-viewer/research.md`)
+## Ce qu'il voit pour vous
 
-- Signatures : `pgp` (rPGP) et RustCrypto `cms` / `x509-cert` / `rsa` / `p256` / `p384`, 100 % Rust, aussi en WebAssembly
-- EML : `mail-parser` · MSG : `cfb` + couche MAPI maison (oracle de test : `msg_parser`) · PST : `outlook-pst` (Microsoft, lecture seule)
-- UI : Tauri 2 + TypeScript vanilla + CSS natif, polices embarquées (même découpage que msg-reader : `FileHandler`, `MessageHandler`, `UIManager`)
-- CLI `mf` pour l'automatisation et la contre-vérification
+### Un verdict, et pourquoi
 
-## Utiliser
+Chaque message reçoit un verdict — **Malveillant**, **À vérifier** ou **Légitime** — affiché en tête
+et en pastille dans la liste, avec les raisons qui le fondent. Le verdict est prudent par construction :
 
-**Application de bureau** — prérequis : Rust stable, Node.js ≥ 20 ; sous Linux `libwebkit2gtk-4.1-dev libsoup-3.0-dev librsvg2-dev` ; sous Windows WebView2 (déjà présent sur Windows 10/11).
+- « Malveillant » exige un **signe de tromperie délibérée** (domaine sosie, exécutable déguisé, lien
+  masqué…) : un expéditeur simplement mal configuré n'est pas accusé à tort ;
+- « Légitime » exige une **preuve d'authenticité** (DMARC, SPF + DKIM, ou une signature PGP / S/MIME
+  vérifiée) : sans elle, le message reste « À vérifier ».
+
+### Qui a vraiment envoyé ce message
+
+- **Acheminement** : IP et nom de la machine d'envoi, IP du client de l'expéditeur, serveur qui a
+  remis le message, chemin complet relais par relais avec les délais — lus dans les en-têtes, sans
+  aucune requête DNS.
+- **SPF, DKIM, DMARC** : le verdict qui fait foi, et l'empreinte du corps DKIM **recalculée** : un
+  message retouché après signature est démasqué.
+- **Signatures PGP et S/MIME** vérifiées sur les octets exacts : valide, falsifiée, clé inconnue,
+  certificat expiré, signataire différent de l'expéditeur. Importez vos clés et autorités une fois,
+  elles restent sur le poste.
+- **Usurpation** : domaine sosie d'une marque, Reply-To ou Return-Path d'un autre domaine, nom
+  affiché trompeur, date dans le futur, relais qui remontent le temps.
+
+### Où mènent les liens
+
+- Toutes les URL du message, dédoublonnées et localisées (en-tête, texte, `href`, CSS), **jamais
+  cliquables**, copiables brutes ou défangées.
+- **Liens trompeurs** : texte affiché ≠ destination, `user@hôte`, adresse IP brute, punycode et
+  alphabets mélangés (`pаypal` avec un « а » cyrillique est démasqué).
+- **Redirections décodées sans cliquer** : Safe Links, Proofpoint, Google, Bing, Facebook, YouTube,
+  LinkedIn… La vraie destination est extraite et analysée à son tour.
+- **QR codes** : les images du message sont scannées, l'URL cachée dans un QR code (« quishing »)
+  rejoint la liste.
+
+### Ce que cachent les pièces jointes
+
+- **Type réel** reconnu au contenu (exécutable, raccourci, ISO, archive, document Office…) et comparé
+  à l'extension : double extension, caractères d'inversion Unicode, macros, archives chiffrées.
+- **Pages HTML jointes** lues sans être exécutées : faux formulaire de connexion et adresse où partent
+  les identifiants, exfiltration (bot Telegram, webhooks…), code obfusqué décodé, redirection
+  automatique, adresse de la victime pré-remplie.
+- Empreintes SHA-256 et MD5, messages joints ouverts en cascade, et **téléchargement sous
+  confirmation**, identique octet pour octet.
+
+### Une lecture sans risque
+
+- Le corps HTML est affiché **neutralisé** : scripts retirés, pixels de suivi et images distantes
+  bloqués. Chaque ressource bloquée est listée et localisée, dans le rendu comme dans la source.
+- Les messages Outlook dont la mise en forme n'existe qu'en RTF retrouvent leur HTML d'origine.
+- Tous les en-têtes bruts d'un clic (touche `H`), thème clair ou sombre, plein écran.
+
+### Restituer
+
+- **Indicateurs** (adresses, domaines, IP publiques, URL, empreintes) dédoublonnés et défangés :
+  copie en un clic, export CSV ou JSON, pour un message ou pour tous.
+- **Rapport** autonome : HTML imprimable en PDF (sans aucune ressource externe) ou JSON versionné.
+  Preuve et empreintes, verdict, constats, signatures, authentification, acheminement, pièces
+  jointes, URL et indicateurs, annexe des en-têtes.
+
+![Thème sombre : pièce jointe HTML piégée et lien Safe Links décodé](docs/apercu-sombre.png)
+
+---
+
+## Les principes
+
+| | |
+|---|---|
+| **La preuve est intouchable** | Les fichiers sont ouverts en lecture seule ; leur SHA-256 et MD5 sont calculés à l'ouverture et figurent dans chaque rapport. L'outil refuse d'écrire dans le dossier d'une preuve. |
+| **Rien ne sort** | Aucune requête réseau, aucune résolution DNS, aucune réputation en ligne. Les seuls liens externes (vérification d'une clé PGP) ne s'ouvrent que sur clic confirmé. |
+| **Le contenu est hostile** | HTML neutralisé, ressources distantes bloquées, URL non cliquables, pièces jointes jamais exécutées, mémoire bornée sur les fichiers piégés. |
+| **Vérifiable** | Le même moteur sert la ligne de commande, l'application et la page web ; chaque version est testée sur un corpus de messages réels et piégés. |
+
+---
+
+## Trois façons de l'utiliser
+
+### Dans le navigateur
+
+Aucune installation : ouvrez la page, déposez vos fichiers. Le moteur est compilé en WebAssembly et
+s'exécute dans un processus isolé de la page ; une politique de sécurité stricte interdit toute
+connexion après le chargement. Une fois ouverte, la page continue de fonctionner hors-ligne.
+
+### Application de bureau
+
+Windows, macOS et Linux. Glisser-déposer de fichiers ou de dossiers entiers, ouverture directe
+depuis l'explorateur.
 
 ```console
 cd apps/desktop
 npm install
-npm run tauri dev          # développement
-npm run tauri build        # installeurs .msi/.exe, .dmg, .deb/.AppImage
+npm run tauri dev       # lancer en développement
+npm run tauri build     # produire les installeurs (.msi, .dmg, .deb, .AppImage)
 ```
 
-Déposez des `.eml` / `.msg` (ou un dossier) dans la fenêtre. Pour chaque message :
+Prérequis : Rust stable et Node.js 20+. Sous Linux : `libwebkit2gtk-4.1-dev libsoup-3.0-dev librsvg2-dev`.
 
-- **Acheminement** (en haut à droite, sous l'adresse de l'expéditeur) : IP et DNS de la machine d'envoi (DNS inverse et nom annoncé HELO, tels qu'enregistrés dans les en-têtes `Received` — aucune requête DNS), première IP publique si l'origine est privée, IP qui a remis le message au destinataire, serveur de réception et chemin complet avec les délais entre relais.
-- **HTML / Texte / Source HTML** : le rendu HTML (neutralisé) est la vue par défaut ; pour les `.msg` Outlook dont la mise en forme n'existe qu'en RTF, le HTML d'origine est reconstitué depuis le RTF. **Plein écran** affiche le rendu sur toute la fenêtre.
-- **Thème** (en bas de la liste) : auto, clair ou sombre, mémorisé sur le poste.
-- **Afficher les en-têtes** (bouton ou touche `H`) déplie tous les en-têtes bruts, dans l'ordre d'origine ; l'état reste mémorisé d'un message à l'autre.
-- **Fichiers contenus** liste chaque pièce jointe (nom, type, taille, inline/attaché, SHA-256 et MD5) ; un message joint (`.eml`, `.msg`) s'ouvre avec **Ouvrir le message joint**, qui affiche ses propres en-têtes, fichiers et URL.
-- **Télécharger** (sous chaque fichier) ouvre une boîte de confirmation rappelant nom, type, taille, SHA-256 et le risque ; le fichier enregistré est identique octet pour octet à celui du message, sous un nom assaini. Un message Outlook embarqué en objet MAPI n'a pas de fichier d'origine : il s'ouvre mais ne se télécharge pas.
-- **Ressources distantes bloquées** : le corps HTML est affiché sans rien charger depuis Internet (pixels de suivi, images, feuilles de style, scripts, cadres). Le bandeau « N ressources distantes bloquées » se déplie : pour chacune, son URL, son type, l'élément HTML (`<img src>`, `<td style>`…) et sa ligne dans le code HTML. **Voir dans le rendu** amène au repère numéroté placé à son emplacement, **Voir dans la source** à la ligne de l'onglet **Source HTML**.
-- **URL** liste toutes les URL du message, dédoublonnées, avec leur emplacement (en-tête, texte, HTML `href`/`src`, CSS) ; elles ne sont jamais cliquables et se copient brutes ou défangées. Chaque URL porte ses alertes : texte affiché différent de la destination, IP brute, punycode (avec le domaine Unicode réel), alphabets mélangés, domaine sosie d'une marque, `user@hôte`.
-- **Empreintes de la preuve** (SHA-256, MD5 du fichier ouvert) : en tête du panneau de droite.
-- **Verdict** (au-dessus de l'analyse, et en pastille dans la liste) : **Malveillant**, **À vérifier** ou **Légitime**, avec ses principales raisons et un score. Chaque constat pèse selon sa règle ; « Malveillant » exige en plus un signe de tromperie délibérée (domaine sosie, exécutable déguisé, destination masquée…), pour qu'un expéditeur simplement mal configuré ne soit pas accusé à tort ; « Légitime » exige un expéditeur authentifié (DMARC, ou SPF et DKIM). Sans résultat d'authentification, le message reste « À vérifier ». C'est une aide au tri : aucune réputation externe n'est consultée, l'analyste a le dernier mot.
-- **Analyse** (au-dessus des en-têtes, **Replier / Déplier**, état mémorisé), entièrement locale :
-  - verdicts **SPF / DKIM / DMARC** lus dans `Authentication-Results` (le plus récent fait foi), `ARC-Authentication-Results` et `Received-SPF` ;
-  - **DKIM** : l'empreinte du corps (`bh=`) est recalculée hors-ligne (canonicalisation simple/relaxed, `l=`) — un corps modifié depuis la signature est signalé. La signature `b=` n'est pas vérifiable sans requête DNS (clé publique) : elle ne l'est pas, par principe. Un `.msg` ne conserve pas le corps MIME d'origine : l'empreinte n'y est pas vérifiable ;
-  - **constats** classés par gravité : expéditeur (domaine sosie, Reply-To / Return-Path d'un autre domaine, nom affiché trompeur, Message-ID étranger), chronologie (date dans le futur, relais qui remontent le temps), liens, pièces jointes. Chaque constat renvoie à l'en-tête, la pièce jointe ou l'URL concernée.
-- **QR codes** : les images (pièces jointes, images `cid:` et `data:` du HTML) sont scannées ; l'URL d'un QR code est ajoutée à la liste et analysée (quishing). Mémoire bornée : images de plus de 8 Mo ou 8000 px ignorées, 40 images par message au plus.
-- **Pièces jointes HTML / SVG** : sans rien exécuter, l'outil y cherche le faux formulaire (champ mot de passe, adresse d'envoi), l'exfiltration (bot Telegram, webhook Discord, Formspree…), l'obfuscation (`eval`, `atob` — les charges base64 sont décodées et analysées à leur tour), les redirections automatiques et l'adresse du destinataire intégrée à la page.
-- **Liens de redirection** : la vraie destination est décodée **sans suivre le lien** pour Microsoft Safe Links, Proofpoint, Google, Bing, Facebook, YouTube, LinkedIn et les paramètres `url=`/`redirect=`… ; un redirecteur public détourné est signalé, une réécriture de sécurité simplement décodée.
-- **Signatures PGP et S/MIME** (au-dessus de l'analyse) : PGP/MIME, PGP en clair, S/MIME détaché ou opaque (`.p7m`, y compris celui d'un message Outlook). La signature est vérifiée **sur les octets exacts** de la partie signée :
-  - *valide* (contenu intact), *invalide* (contenu modifié), *clé inconnue*, clé ou certificat *expiré* à la date de signature, clé *révoquée*, signataire ≠ expéditeur ;
-  - S/MIME : le certificat joint suffit à prouver l'intégrité ; l'identité n'est confirmée que si le certificat de l'autorité a été importé ;
-  - **Clés et certificats** (bas de la liste) : importez les clés publiques PGP (`.asc`, `.gpg`) et certificats (`.pem`, `.cer`, `.crt`). Ils restent sur le poste, sont réimportés au démarrage, et les messages ouverts sont aussitôt ré-analysés ;
-  - **Vérifier en ligne ↗** : keys.openpgp.org (empreinte, adresse), keyserver.ubuntu.com, Keyoxide, WKD du domaine (adresse calculée hors-ligne). Chaque lien demande confirmation : c'est la seule sortie du cadre hors-ligne, et elle est volontaire. L'application de bureau n'ouvre que ces services ;
-  - une signature valide au nom de l'expéditeur (clé importée, ou certificat d'une autorité importée) suffit à rendre le verdict « Légitime » ; une signature invalide ou d'un autre signataire est une alerte grave.
-- **Pièces jointes dangereuses** : type réel reconnu par signature (PE, ELF, LNK, OLE, ZIP/OOXML, ISO, RAR, 7z…) comparé à l'extension et au type déclaré ; exécutables, double extension, caractères de direction Unicode, archives chiffrées, documents à macros, pièces HTML, TNEF.
-- **Indicateurs** (sous les URL) : adresses, domaines, IP publiques, URL et empreintes des pièces jointes, dédoublonnés et défangés ; **Copier (défangés)**, **Exporter CSV / JSON** pour le message, **Télécharger tous les indicateurs** en bas de la liste pour tous les messages chargés.
-- **Rapport** (à droite du bouton des en-têtes) : **HTML (imprimable)** — document autonome, sans aucune ressource externe, à imprimer en PDF depuis le navigateur — ou **JSON** (schéma versionné). Il reprend preuve et empreintes, constats, authentification, acheminement, pièces jointes, URL et indicateurs défangés, et l'annexe des en-têtes.
+### Ligne de commande
 
-Autres raccourcis : `↑`/`↓` changer de message, `P` épingler, `Échap` revenir au message parent.
-
-**Version web** (même interface, même moteur compilé en WebAssembly, aucun serveur) — prérequis supplémentaires :
-`rustup target add wasm32-unknown-unknown` et `cargo install wasm-bindgen-cli --version 0.2.129`.
-
-```console
-cd apps/desktop
-npm run dev:web            # http://localhost:5173
-npm run build:web          # → dist-web/ (2,5 Mo), à servir par n'importe quel serveur statique
-npm run test:web           # e2e : concordance avec la CLI, zéro requête réseau, hors-ligne
-```
-
-Les fichiers sont lus et analysés dans le navigateur : rien n'est envoyé, et aucune requête n'est émise
-après le chargement de la page (CSP stricte, vérifiée par le test e2e). Une poussée sur `main` publie
-la page sur GitHub Pages (`.github/workflows/pages.yml`). Limites : 500 Mo par fichier, pas
-d'association de fichiers ni de PST.
-
-**Ligne de commande** :
+Pour l'automatisation, le traitement par lots et la contre-vérification. Le binaire `mf` est produit dans `target/release/`.
 
 ```console
 cargo build --release
-./target/release/mf show courriel.eml --headers      # résumé + en-têtes + fichiers + URL
-./target/release/mf urls suspect.msg --defang
-./target/release/mf attachments suspect.msg          # arborescence des messages joints
-./target/release/mf show suspect.msg --path 3 --json # message joint n°3, en JSON
-./target/release/mf extract suspect.eml --index 1 --out ./pj   # enregistre la PJ n°1
-./target/release/mf findings *.eml                    # authentification + constats
-./target/release/mf iocs *.eml *.msg --format csv --defang > indicateurs.csv
-./target/release/mf report suspect.eml --out rapport.html      # ou --format json
-./target/release/mf show signe.eml --keys ./cles/              # vérifie PGP / S/MIME avec vos clés et autorités
+mf show suspect.eml --headers                    # résumé, en-têtes, fichiers, URL
+mf findings *.eml *.msg                          # verdict, authentification, constats
+mf urls suspect.msg --defang                     # URL défangées
+mf attachments suspect.msg                       # arborescence des pièces et messages joints
+mf extract suspect.eml --index 1 --out ./pj      # extraire une pièce jointe
+mf iocs *.eml --format csv --defang > iocs.csv   # indicateurs de tout un lot
+mf report suspect.eml --out rapport.html         # rapport (ou --format json)
+mf show signe.eml --keys ./cles/                 # vérifier PGP / S/MIME avec vos clés
 ```
 
-**Tests** : `cargo test` (tests unitaires et corpus, concordance avec `msg_parser`, parité fichier / octets) et `npm run test:web`.
+Toutes les commandes acceptent `--json`.
 
-## Continuer
+### Raccourcis clavier
+
+| Touche | Action |
+|---|---|
+| `↑` `↓` | message précédent / suivant |
+| `H` | afficher / masquer les en-têtes |
+| `P` | épingler le message |
+| `Échap` | revenir au message parent |
+
+---
+
+## Sous le capot
+
+Un moteur unique en **Rust**, sans aucun code `unsafe`, partagé par les trois interfaces.
+
+```text
+crates/
+├── mf-core       modèle de données, lecture des preuves, empreintes
+├── mf-eml        format MIME (.eml)
+├── mf-msg        format Outlook (.msg) : conteneur OLE, propriétés MAPI, RTF compressé
+├── mf-analysis   acheminement, SPF/DKIM/DMARC, liens, pièces jointes, QR codes, constats, verdict
+├── mf-sig        signatures PGP et S/MIME
+├── mf-report     rapports HTML et JSON, export des indicateurs
+├── mf-engine     point d'entrée commun
+├── mf-cli        ligne de commande « mf »
+└── mf-wasm       moteur compilé pour le navigateur
+apps/desktop/     interface TypeScript commune : application Tauri 2 et version web
+tests/corpus/     messages de référence, réels et synthétiques (phishing, quishing, signés…)
+specs/            spécifications, plan et tâches du projet
+```
+
+### Développer
 
 ```console
-uv tool install specify-cli     # ou: pip install specify-cli
-claude                          # dans ce dossier ; les skills /speckit-* sont déjà installés
-/speckit-clarify                # facultatif
-/speckit-analyze
-/speckit-implement              # poursuit le MVP (US1), puis US2…US6
+cargo test --workspace --exclude mailforensics-desktop   # tests unitaires et corpus
+cargo clippy --workspace --all-targets -- -D warnings
+
+cd apps/desktop
+npm run dev:web      # version web sur http://localhost:5173
+npm run build:web    # page statique dans dist-web/
+npm run test:web     # tests de bout en bout dans un vrai navigateur
 ```
 
-Prototype de validation des crates :
+La version web demande en plus la cible `wasm32-unknown-unknown` et `wasm-bindgen-cli` 0.2.129.
+Chaque poussée sur `main` publie la page web.
 
-```console
-cd spikes/crate-validation && cargo run -- samples/phishing-basic.eml chemin/vers/un.msg
-```
+Le projet est piloté par ses spécifications : chaque fonctionnalité part d'une exigence numérotée
+dans `specs/`, puis d'un plan et de tâches cochées au fil de l'implémentation.
 
-## Décisions à confirmer
+---
 
-1. Vérification DKIM/S-MIME **en ligne** (DNS) exclue de la v1 pour rester hors-ligne ; seule la vérification hors-ligne du hash du corps est faite.
-2. Pas d'enrichissement externe (WHOIS, VirusTotal) en v1.
-3. Mono-analyste, pas de serveur.
-4. Décodage TNEF (`winmail.dat`) après le MVP.
+## Et ensuite
+
+- **Boîtes Outlook `.pst` / `.ost`** : ouvrir une boîte entière, la parcourir et la fouiller.
+- **Listes de l'équipe** : domaines légitimes de l'organisation, listes de blocage importées,
+  règles maison prises en compte par le verdict.
+- Contenu des archives et des documents Office.
+
+---
 
 ## Licence
 
-[Apache-2.0](LICENSE). Le design s'inspire de [msg-reader](https://github.com/Rasalas/msg-reader) (MIT) sans en reprendre le code ;
-les fichiers `.msg` du corpus de test proviennent du jeu de test de [msg_parser](https://github.com/marirs/msg-parser-rs) (MIT, voir `tests/corpus/README.md`).
+Apache-2.0 — voir [`LICENSE`](LICENSE). Une partie des messages `.msg` du corpus de test provient de
+projets sous licence MIT, crédités dans [`tests/corpus/README.md`](tests/corpus/README.md).
