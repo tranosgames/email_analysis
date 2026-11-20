@@ -12,6 +12,7 @@ mf-sig.workspace = true
 mf-eml.workspace = true
 mf-msg.workspace = true
 mf-analysis.workspace = true
+mf-pst.workspace = true
 serde.workspace = true
 
 [dev-dependencies]

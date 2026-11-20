@@ -1,0 +1,109 @@
+//! Contrat CLI `mf pst` (specs/002-pst-support/contracts/cli.md) sur `support.pst`.
+#![allow(clippy::unwrap_used, clippy::panic)]
+
+use std::path::PathBuf;
+use std::process::Command;
+
+fn mf(args: &[&str]) -> (i32, String, String) {
+    let o = Command::new(env!("CARGO_BIN_EXE_mf"))
+        .args(args)
+        .output()
+        .unwrap();
+    (
+        o.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&o.stdout).into(),
+        String::from_utf8_lossy(&o.stderr).into(),
+    )
+}
+
+fn support() -> String {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/corpus/pst/support.pst")
+        .display()
+        .to_string()
+}
+
+#[test]
+fn info_tree_ls_show_json() {
+    let f = support();
+    let (code, out, _) = mf(&["pst", "info", &f, "--json"]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["store"]["format"], "unicode");
+    assert_eq!(v["store"]["items"], 17);
+    assert_eq!(
+        v["hash"]["sha256"],
+        "5872c9aec2e0aacd0f793f3ffa2a7e85eba1d873a1d2659fb01019d4de197a1c"
+    );
+    assert_eq!(v["items_read"], 0, "info ne lit aucun élément");
+
+    let (_, out, _) = mf(&["pst", "tree", &f, "--json"]);
+    let tree: Vec<serde_json::Value> = serde_json::from_str(&out).unwrap();
+    let drafts = tree.iter().find(|d| d["name"] == "Drafts").unwrap();
+    assert_eq!(drafts["item_count"], 6);
+
+    let (code, out, err) = mf(&["pst", "ls", &f, "--folder", "Drafts", "--json"]);
+    assert_eq!(code, 0, "{err}");
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&out).unwrap();
+    assert_eq!(rows.len(), 6);
+    let id = rows[0]["id"].as_u64().unwrap().to_string();
+
+    let (code, out, err) = mf(&["pst", "show", &f, "--id", &id, "--json"]);
+    assert_eq!(code, 0, "{err}");
+    let a: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(
+        a["message"]["provenance"]["folder_path"],
+        serde_json::json!(["Drafts"])
+    );
+    assert!(a["message"]["verdict"].is_object());
+}
+
+#[test]
+fn ls_whole_box_reads_no_item_and_report_refuses_evidence_dir() {
+    let f = support();
+    let (code, _, err) = mf(&["pst", "ls", &f]);
+    assert_eq!(code, 0);
+    assert!(err.contains("17 élément(s) ; éléments lus : 0"), "{err}");
+    let (_, out, _) = mf(&["pst", "ls", &f, "--json"]);
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&out).unwrap();
+    let id = rows[0]["id"].as_u64().unwrap().to_string();
+    let inside = PathBuf::from(&f).with_file_name("rapport-interdit.html");
+    let (code, _, err) = mf(&[
+        "pst",
+        "report",
+        &f,
+        "--id",
+        &id,
+        "--out",
+        &inside.display().to_string(),
+    ]);
+    assert_ne!(code, 0);
+    assert!(err.contains("dossier de la preuve"), "{err}");
+    assert!(!inside.exists());
+    let out = std::env::temp_dir().join(format!("mf-pst-report-{}.json", std::process::id()));
+    let _ = std::fs::remove_file(&out);
+    let (code, _, err) = mf(&[
+        "pst",
+        "report",
+        &f,
+        "--id",
+        &id,
+        "--format",
+        "json",
+        "--out",
+        &out.display().to_string(),
+    ]);
+    assert_eq!(code, 0, "{err}");
+    let r: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
+    assert_eq!(
+        r["evidence"]["sha256"],
+        "5872c9aec2e0aacd0f793f3ffa2a7e85eba1d873a1d2659fb01019d4de197a1c"
+    );
+    assert!(
+        r["provenance"].as_str().unwrap().contains("support.pst"),
+        "{}",
+        r["provenance"]
+    );
+    std::fs::remove_file(&out).unwrap();
+}

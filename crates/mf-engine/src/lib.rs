@@ -3,6 +3,9 @@
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::panic)]
 
+pub mod mailbox;
+
+pub use mailbox::{BoxSession, HashProgress};
 pub use mf_core::safe_file_name;
 use mf_core::{EngineError, Evidence, Format, Message};
 pub use mf_sig::{KeyEntry, Keyring, is_verification_link};
@@ -56,7 +59,11 @@ fn analyze_evidence(
     let mut message = match evidence.format {
         Format::Eml => mf_eml::parse(bytes, 0)?,
         Format::Msg => mf_msg::parse(bytes)?,
-        Format::Pst => return Err(EngineError::Parse("PST : prévu dans la feature 002".into())),
+        Format::Pst => {
+            return Err(EngineError::Parse(
+                "boîte PST/OST : à ouvrir comme une boîte (BoxSession, `mf pst`)".into(),
+            ));
+        }
         Format::Unknown => return Err(EngineError::UnknownFormat),
     };
     expand_attached_messages(&mut message, 0);
@@ -119,7 +126,7 @@ pub fn descend<'a>(root: &'a Message, path: &[u32]) -> Option<&'a Message> {
 
 /// Une PJ binaire qui est elle-même un `.msg` ou un `.eml` (ex. « transférer en pièce jointe »)
 /// est ouverte comme message embarqué, quel que soit le format parent (FR-018).
-fn expand_attached_messages(msg: &mut Message, depth: usize) {
+pub(crate) fn expand_attached_messages(msg: &mut Message, depth: usize) {
     if depth + 1 >= mf_core::MAX_NESTING {
         return;
     }

@@ -20,7 +20,11 @@ fn ours(b: &PstBox) -> Vec<(String, u64, u64)> {
         }
         let mut atts = 0;
         for it in &items {
-            atts += b.open_item(it.id, "").unwrap().attachments.len() as u64;
+            atts += b
+                .open_item(it.id, Some(it.folder), "")
+                .unwrap()
+                .attachments
+                .len() as u64;
         }
         v.push((f.name.clone(), items.len() as u64, atts));
     }
@@ -85,7 +89,12 @@ fn formats_and_metadata() {
     );
     let ost = corpus().join("large/example-2013.ost");
     if ost.exists() {
-        assert_eq!(PstBox::open_path(&ost).unwrap().info().format, "ost4k");
+        let b = PstBox::open_path(&ost).unwrap();
+        assert_eq!(b.info().format, "ost4k");
+        assert!(
+            !b.info().password_protected,
+            "0xFFFFFFFF n'est pas un mot de passe"
+        );
     }
 }
 

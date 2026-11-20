@@ -187,7 +187,9 @@ impl PstBox {
         stats: Rc<ReadStats>,
     ) -> Result<Self, PstError> {
         let props = store.properties();
-        let password_protected = int(props.get(PR_PST_PASSWORD)).is_some_and(|p| p != 0);
+        // 0 = aucun mot de passe ; les OST portent 0xFFFFFFFF, valeur neutre.
+        let password_protected =
+            int(props.get(PR_PST_PASSWORD)).is_some_and(|p| p != 0 && p != u32::MAX);
         let mut info = StoreInfo {
             name: name.to_string(),
             size,
@@ -486,36 +488,30 @@ impl PstBox {
             .collect())
     }
 
-    /// Lit et convertit un élément : le seul appel qui lit un message (FR-006).
-    pub fn open_item(&self, id: u32, store_sha256: &str) -> Result<Message, PstError> {
+    /// Lit et convertit un élément : le seul appel qui lit un message (FR-006). `folder` est le
+    /// dossier dont la liste contenait l'élément (provenance).
+    pub fn open_item(
+        &self,
+        id: u32,
+        folder: Option<u32>,
+        store_sha256: &str,
+    ) -> Result<Message, PstError> {
         let m = self.store.open_message(&self.entry(id)?, None)?;
         self.items_read.set(self.items_read.get() + 1);
         let obj = PstObj::message(m);
         let mut msg = mf_msg::convert(&obj, 0);
         msg.issues.extend(obj.issues.borrow().iter().cloned());
-        let folder_path = self
-            .folders
-            .iter()
-            .find(|f| self.folder_contains(f.id, id))
-            .map(|f| f.path.clone())
-            .unwrap_or_default();
         msg.provenance = Some(Provenance {
             store_name: self.info.name.clone(),
             store_sha256: store_sha256.to_string(),
-            folder_path,
+            folder_path: folder
+                .and_then(|f| self.folder_info(f))
+                .map(|f| f.path.clone())
+                .unwrap_or_default(),
             node_id: id,
             embedded_path: Vec::new(),
         });
         Ok(msg)
-    }
-
-    /// L'élément figure-t-il dans la table du dossier (dossiers déjà ouverts uniquement) ?
-    fn folder_contains(&self, folder: u32, item: u32) -> bool {
-        self.open_folders
-            .borrow()
-            .get(&folder)
-            .and_then(|f| f.contents_table().cloned())
-            .is_some_and(|t| t.rows_matrix().any(|r| u32::from(r.id()) == item))
     }
 
     /// Nombre d'éléments lus depuis l'ouverture (preuve qu'aucun autre ne l'est).

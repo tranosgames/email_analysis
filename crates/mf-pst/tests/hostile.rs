@@ -16,7 +16,7 @@ fn exercise(data: Vec<u8>) {
     for f in b.folders().to_vec() {
         if let Ok(items) = b.list(f.id) {
             for it in items.iter().take(5) {
-                let _ = b.open_item(it.id, "");
+                let _ = b.open_item(it.id, Some(it.folder), "");
             }
         }
     }

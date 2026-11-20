@@ -58,16 +58,16 @@ corpus : `tests/corpus/pst/`. Numérotation propre à la feature, préfixe `P`.
 
 ### Tests
 
-- [ ] P012 [P] [US1] `crates/mf-pst/tests/items.rs` : pour 5 éléments annotés d'Enron 29 Mo (objet, expéditeur SMTP, date, nombre et noms des pièces jointes, présence des en-têtes de transport), l'élément converti est conforme ; un élément avec message embarqué s'ouvre en cascade
-- [ ] P013 [P] [US1] `crates/mf-pst/tests/integrity.rs` : SHA-256 du fichier identique avant et après ouverture et parcours complet (SC-001)
-- [ ] P014 [P] [US1] `crates/mf-cli/tests/pst.rs` : `mf pst info|tree|ls|show` sur `support.pst` (sorties JSON conformes à contracts/cli.md)
+- [x] P012 [P] [US1] `crates/mf-pst/tests/items.rs` : pour 5 éléments annotés d'Enron 29 Mo (objet, expéditeur SMTP, date, nombre et noms des pièces jointes, présence des en-têtes de transport), l'élément converti est conforme ; un élément avec message embarqué s'ouvre en cascade
+- [x] P013 [P] [US1] `crates/mf-pst/tests/integrity.rs` : SHA-256 du fichier identique avant et après ouverture et parcours complet (SC-001)
+- [x] P014 [P] [US1] `crates/mf-cli/tests/pst.rs` : `mf pst info|tree|ls|show` sur `support.pst` (sorties JSON conformes à contracts/cli.md)
 
 ### Implementation
 
-- [ ] P015 [US1] `crates/mf-pst/src/item.rs` : `PropertySource` sur un message PST (propriétés, table des destinataires, pièces jointes, objets embarqués) ; `list(folder, offset, limit)` depuis la table de contenu **sans ouvrir** les éléments ; `open_item` → `Message` + `Provenance`
-- [ ] P016 [US1] `crates/mf-pst/src/hash.rs` : SHA-256 + MD5 en flux par blocs de 8 Mo, `hash_step(budget)` avec progression
-- [ ] P017 [US1] `crates/mf-engine` : `open_box` et `BoxSession` (contracts/engine-api.md) ; `open_item` passe par l'analyse complète existante (clés, signatures)
-- [ ] P018 [US1] `crates/mf-cli` : `mf pst info|tree|ls|show|report|bench` ; provenance dans `mf show` et dans le rapport HTML/JSON (`crates/mf-report`)
+- [x] P015 [US1] `crates/mf-pst/src/item.rs` : `PropertySource` sur un message PST (propriétés, table des destinataires, pièces jointes, objets embarqués) ; `list(folder, offset, limit)` depuis la table de contenu **sans ouvrir** les éléments ; `open_item` → `Message` + `Provenance`
+- [x] P016 [US1] `crates/mf-pst/src/hash.rs` : SHA-256 + MD5 en flux par blocs de 8 Mo, `hash_step(budget)` avec progression
+- [x] P017 [US1] `crates/mf-engine` : `open_box` et `BoxSession` (contracts/engine-api.md) ; `open_item` passe par l'analyse complète existante (clés, signatures)
+- [x] P018 [US1] `crates/mf-cli` : `mf pst info|tree|ls|show|report|bench` ; provenance dans `mf show` et dans le rapport HTML/JSON (`crates/mf-report`)
 - [ ] P019 [US1] Tauri : thread de travail par boîte (objets non `Send`), commandes `box_open|box_list|box_item|box_close`, événements de progression ; fichier `.pst`/`.ost` reconnu au dépôt et à l'ouverture de dossier ; même boîte déposée deux fois signalée en doublon par empreinte
 - [ ] P020 [US1] Interface : panneau d'arborescence (dossiers repliables, compteurs), liste virtualisée (50 000 lignes fluides), message ouvert avec toutes les vues, fil d'Ariane de provenance, progression de l'empreinte, liste des éléments illisibles
 - [ ] P021 [US1] Éléments non courriel (rendez-vous, contacts, tâches, notes) : classe affichée, propriétés principales, pas de verdict

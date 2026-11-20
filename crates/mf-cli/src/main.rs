@@ -26,6 +26,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Boîtes Outlook PST / OST : seuls les éléments désignés par --id sont lus.
+    Pst {
+        #[command(subcommand)]
+        cmd: PstCmd,
+    },
     /// Constats automatiques (authentification, expéditeur, liens, pièces jointes).
     Findings { files: Vec<PathBuf> },
     /// Indicateurs de compromission de plusieurs messages, fusionnés (CSV ou JSON).
@@ -450,6 +455,61 @@ fn print_signatures(m: &Message) {
     }
 }
 
+/// Affichage lisible d'un message (`mf show`, `mf pst show`).
+fn print_message(ev: &mf_core::Evidence, m: &Message, headers: bool) {
+    println!(
+        "Preuve   {} ({:?}, {})\n  sha256 {}\n  md5    {}",
+        ev.path,
+        ev.format,
+        human(ev.size),
+        if ev.sha256.is_empty() {
+            "(non calculée : `mf pst info`)"
+        } else {
+            &ev.sha256
+        },
+        ev.md5
+    );
+    println!("De       {}", fmt_list(&m.from));
+    if let Some(s) = &m.sender {
+        println!("Envoyé par {}", fmt_addr(s));
+    }
+    if !m.reply_to.is_empty() {
+        println!("Répondre à {}", fmt_list(&m.reply_to));
+    }
+    println!("À        {}", fmt_list(&m.to));
+    if !m.cc.is_empty() {
+        println!("Cc       {}", fmt_list(&m.cc));
+    }
+    if !m.bcc.is_empty() {
+        println!("Cci      {}", fmt_list(&m.bcc));
+    }
+    println!("Objet    {}", m.subject.as_deref().unwrap_or(""));
+    println!(
+        "Date     {}  (UTC {})",
+        m.date_raw.as_deref().unwrap_or("—"),
+        m.date_utc.as_deref().unwrap_or("—")
+    );
+    for i in &m.issues {
+        println!("⚠ {i}");
+    }
+    if headers {
+        print_headers(m);
+    } else {
+        println!(
+            "En-têtes ({}) — ajouter --headers pour les afficher",
+            m.headers.len()
+        );
+    }
+    println!("Fichiers contenus ({})", m.attachments.len());
+    print_attachments(m, 1);
+    print_auth(m);
+    print_signatures(m);
+    print_findings(m);
+    print_route(m);
+    print_urls(m, false);
+    print_blocked(m);
+}
+
 fn run(cli: Cli) -> Result<(), String> {
     let keys = load_keys(&cli.keys)?;
     let out = |v: &dyn erased::Json| -> Result<(), String> {
@@ -457,6 +517,7 @@ fn run(cli: Cli) -> Result<(), String> {
         Ok(())
     };
     match cli.cmd {
+        Cmd::Pst { cmd } => return pst_cmd(cmd, cli.json, &keys),
         Cmd::Hash { files } => {
             let mut all = Vec::new();
             for f in files {
@@ -488,53 +549,7 @@ fn run(cli: Cli) -> Result<(), String> {
             if cli.json {
                 return out(m);
             }
-            println!(
-                "Preuve   {} ({:?}, {})\n  sha256 {}\n  md5    {}",
-                a.evidence.path,
-                a.evidence.format,
-                human(a.evidence.size),
-                a.evidence.sha256,
-                a.evidence.md5
-            );
-            println!("De       {}", fmt_list(&m.from));
-            if let Some(s) = &m.sender {
-                println!("Envoyé par {}", fmt_addr(s));
-            }
-            if !m.reply_to.is_empty() {
-                println!("Répondre à {}", fmt_list(&m.reply_to));
-            }
-            println!("À        {}", fmt_list(&m.to));
-            if !m.cc.is_empty() {
-                println!("Cc       {}", fmt_list(&m.cc));
-            }
-            if !m.bcc.is_empty() {
-                println!("Cci      {}", fmt_list(&m.bcc));
-            }
-            println!("Objet    {}", m.subject.as_deref().unwrap_or(""));
-            println!(
-                "Date     {}  (UTC {})",
-                m.date_raw.as_deref().unwrap_or("—"),
-                m.date_utc.as_deref().unwrap_or("—")
-            );
-            for i in &m.issues {
-                println!("⚠ {i}");
-            }
-            if headers {
-                print_headers(m);
-            } else {
-                println!(
-                    "En-têtes ({}) — ajouter --headers pour les afficher",
-                    m.headers.len()
-                );
-            }
-            println!("Fichiers contenus ({})", m.attachments.len());
-            print_attachments(m, 1);
-            print_auth(m);
-            print_signatures(m);
-            print_findings(m);
-            print_route(m);
-            print_urls(m, false);
-            print_blocked(m);
+            print_message(&a.evidence, m, headers);
         }
         Cmd::Headers { file, path } => {
             let a = mf_engine::open_with(&file, &keys).map_err(|e| e.to_string())?;
@@ -679,6 +694,325 @@ fn run(cli: Cli) -> Result<(), String> {
                 return out(&m.urls);
             }
             print_urls(m, defang);
+        }
+    }
+    Ok(())
+}
+
+#[derive(Subcommand)]
+enum PstCmd {
+    /// Format, encodage, protection, empreintes, statistiques, éléments illisibles.
+    Info {
+        file: PathBuf,
+        /// Ne pas calculer l'empreinte (qui lit tout le fichier).
+        #[arg(long)]
+        no_hash: bool,
+    },
+    /// Arborescence des dossiers avec leurs compteurs (tables de hiérarchie seulement).
+    Tree { file: PathBuf },
+    /// Lignes d'un dossier, lues dans sa table, sans ouvrir les éléments.
+    Ls {
+        file: PathBuf,
+        /// Identifiant ou chemin du dossier (« bailey-s/Inbox ») ; par défaut toute la boîte.
+        #[arg(long)]
+        folder: Option<String>,
+    },
+    /// Élément complet, comme `mf show`, avec sa provenance.
+    Show {
+        file: PathBuf,
+        #[arg(long)]
+        id: u32,
+        #[arg(long)]
+        headers: bool,
+    },
+    /// Rapport d'un élément (HTML ou JSON), empreinte de la boîte calculée au préalable.
+    Report {
+        file: PathBuf,
+        #[arg(long)]
+        id: u32,
+        #[arg(long, default_value = "html")]
+        format: String,
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Mesures : temps d'ouverture, de liste, d'ouverture d'élément, octets lus.
+    Bench { file: PathBuf },
+}
+
+/// Dossiers désignés par `--folder` (identifiant ou chemin), ou tous les dossiers non virtuels.
+fn pick_folders(s: &mf_engine::BoxSession, spec: &Option<String>) -> Result<Vec<u32>, String> {
+    let all = s.folders();
+    match spec {
+        None => Ok(all
+            .iter()
+            .filter(|f| f.kind != "search")
+            .map(|f| f.id)
+            .collect()),
+        Some(x) => {
+            if let Ok(id) = x
+                .trim_start_matches("0x")
+                .parse::<u32>()
+                .or_else(|_| u32::from_str_radix(x.trim_start_matches("0x"), 16))
+            {
+                if all.iter().any(|f| f.id == id) {
+                    return Ok(vec![id]);
+                }
+            }
+            let want = x.trim_matches('/').to_lowercase();
+            all.iter()
+                .find(|f| f.path.join("/").to_lowercase() == want)
+                .map(|f| vec![f.id])
+                .ok_or_else(|| format!("dossier introuvable : {x} (voir `mf pst tree`)"))
+        }
+    }
+}
+
+fn pst_cmd(cmd: PstCmd, json: bool, keys: &mf_engine::Keyring) -> Result<(), String> {
+    use mf_engine::BoxSession;
+    let open = |f: &PathBuf| BoxSession::open_path(f).map_err(|e| format!("{}: {e}", f.display()));
+    let print = |v: &dyn erased::Json| -> Result<(), String> {
+        println!("{}", v.to_json().map_err(|e| e.to_string())?);
+        Ok(())
+    };
+    match cmd {
+        PstCmd::Info { file, no_hash } => {
+            let mut s = open(&file)?;
+            let hash = if no_hash {
+                None
+            } else {
+                Some(s.hash_all().map_err(|e| e.to_string())?)
+            };
+            let i = s.info();
+            if json {
+                return print(
+                    &serde_json::json!({ "store": i, "hash": hash, "items_read": s.items_read() }),
+                );
+            }
+            println!(
+                "{} — {} {}, encodage {}, {}{}",
+                i.name,
+                if i.format == "ansi" {
+                    "PST"
+                } else if i.format == "ost4k" {
+                    "OST"
+                } else {
+                    "PST"
+                },
+                match i.format.as_str() {
+                    "ansi" => "ANSI (Outlook 97-2002)",
+                    "ost4k" => "Outlook 2013+ (pages de 4 Ko)",
+                    _ => "Unicode",
+                },
+                i.encoding,
+                human(i.size),
+                if i.password_protected {
+                    ", protégé par mot de passe (le contenu reste lisible)"
+                } else {
+                    ""
+                }
+            );
+            if let Some(n) = &i.display_name {
+                println!("  nom de la boîte : {n}");
+            }
+            if let Some(h) = &hash {
+                println!(
+                    "  sha256 {}\n  md5    {}",
+                    h.sha256.as_deref().unwrap_or(""),
+                    h.md5.as_deref().unwrap_or("")
+                );
+            }
+            println!(
+                "  {} dossiers · {} éléments · {} illisible(s)",
+                i.folders,
+                i.items,
+                i.unreadable.len()
+            );
+            for u in &i.unreadable {
+                println!(
+                    "  ⚠ {} {:#x} ({}) : {}",
+                    u.kind,
+                    u.node_id,
+                    u.folder_path.join(" › "),
+                    u.reason
+                );
+            }
+        }
+        PstCmd::Tree { file } => {
+            let s = open(&file)?;
+            if json {
+                return print(&s.folders());
+            }
+            for f in s.folders() {
+                if f.kind == "root" {
+                    continue;
+                }
+                let label = if f.kind == "ipm" {
+                    s.info()
+                        .display_name
+                        .clone()
+                        .unwrap_or_else(|| "Boîte".into())
+                } else {
+                    f.name.clone()
+                };
+                let tag = match f.kind.as_str() {
+                    "inbox" | "sent" | "deleted" | "drafts" | "outbox" | "junk" | "search"
+                    | "system" => format!("  [{}]", f.kind),
+                    _ => String::new(),
+                };
+                println!(
+                    "{:indent$}{label}  ({}{}){tag}  #{}",
+                    "",
+                    f.item_count,
+                    if f.unread_count > 0 {
+                        format!(", {} non lus", f.unread_count)
+                    } else {
+                        String::new()
+                    },
+                    f.id,
+                    indent = (f.depth.saturating_sub(1) * 2) as usize
+                );
+            }
+        }
+        PstCmd::Ls { file, folder } => {
+            let mut s = open(&file)?;
+            let mut rows = Vec::new();
+            for f in pick_folders(&s, &folder)? {
+                rows.extend(s.list(f).map_err(|e| e.to_string())?);
+            }
+            if json {
+                return print(&rows);
+            }
+            for r in &rows {
+                println!(
+                    "#{:<9} {}  {:24.24}  {}{}",
+                    r.id,
+                    r.received
+                        .as_deref()
+                        .or(r.sent.as_deref())
+                        .map_or("—".to_string(), |d| d.chars().take(16).collect()),
+                    r.from_name.as_deref().unwrap_or("—"),
+                    r.subject.as_deref().unwrap_or("(sans objet)"),
+                    if r.has_attachments { "  📎" } else { "" }
+                );
+            }
+            eprintln!(
+                "{} élément(s) ; éléments lus : {}",
+                rows.len(),
+                s.items_read()
+            );
+        }
+        PstCmd::Show { file, id, headers } => {
+            let mut s = open(&file)?;
+            let a = s.open_item(id, keys).map_err(|e| e.to_string())?;
+            if json {
+                return print(a);
+            }
+            if let Some(p) = &a.message.provenance {
+                println!("Provenance {} › élément #{}", p.label(), p.node_id);
+            }
+            print_message(&a.evidence, &a.message, headers);
+        }
+        PstCmd::Report {
+            file,
+            id,
+            format,
+            out: dest,
+        } => {
+            if dest.exists() {
+                return Err(format!("{} existe déjà", dest.display()));
+            }
+            let evidence_dir = std::fs::canonicalize(&file)
+                .ok()
+                .and_then(|p| p.parent().map(PathBuf::from));
+            let dest_dir = dest
+                .parent()
+                .map(|d| {
+                    if d.as_os_str().is_empty() {
+                        std::path::Path::new(".")
+                    } else {
+                        d
+                    }
+                })
+                .and_then(|d| std::fs::canonicalize(d).ok());
+            if evidence_dir.is_some() && dest_dir == evidence_dir {
+                return Err(
+                    "destination refusée : ne pas écrire dans le dossier de la preuve".into(),
+                );
+            }
+            let mut s = open(&file)?;
+            s.open_item(id, keys).map_err(|e| e.to_string())?;
+            s.hash_all().map_err(|e| e.to_string())?;
+            let a = s.open_item(id, keys).map_err(|e| e.to_string())?;
+            let prov = a
+                .message
+                .provenance
+                .as_ref()
+                .map(|p| format!("{} › élément #{}", p.label(), p.node_id))
+                .unwrap_or_default();
+            let now = now_utc();
+            let version = env!("CARGO_PKG_VERSION");
+            let content = match format.as_str() {
+                "html" => mf_report::report_html(&a.evidence, &a.message, &prov, &now, version),
+                "json" => mf_report::report_json(&a.evidence, &a.message, &prov, &now, version),
+                other => return Err(format!("--format {other} : html ou json attendu")),
+            };
+            std::fs::write(&dest, content).map_err(|e| format!("{}: {e}", dest.display()))?;
+            println!(
+                "{} ({} constat(s))",
+                dest.display(),
+                a.message.findings.len()
+            );
+        }
+        PstCmd::Bench { file } => {
+            let t = std::time::Instant::now();
+            let mut s = open(&file)?;
+            let open_ms = t.elapsed().as_secs_f64() * 1e3;
+            let (pages_open, bytes_open) = s.read_stats();
+            let biggest = s
+                .folders()
+                .iter()
+                .filter(|f| f.kind != "search")
+                .max_by_key(|f| f.item_count)
+                .map(|f| f.id);
+            let t = std::time::Instant::now();
+            let rows = match biggest {
+                Some(f) => s.list(f).map_err(|e| e.to_string())?,
+                None => Vec::new(),
+            };
+            let list_ms = t.elapsed().as_secs_f64() * 1e3;
+            let t = std::time::Instant::now();
+            let all: usize = pick_folders(&s, &None)?
+                .into_iter()
+                .map(|f| s.list(f).map(|r| r.len()).unwrap_or(0))
+                .sum();
+            let all_ms = t.elapsed().as_secs_f64() * 1e3;
+            let t = std::time::Instant::now();
+            if let Some(r) = rows.first() {
+                s.open_item(r.id, keys).map_err(|e| e.to_string())?;
+            }
+            let item_ms = t.elapsed().as_secs_f64() * 1e3;
+            let (pages, bytes) = s.read_stats();
+            let t = std::time::Instant::now();
+            s.hash_all().map_err(|e| e.to_string())?;
+            let hash_ms = t.elapsed().as_secs_f64() * 1e3;
+            let r = serde_json::json!({
+                "file": s.info().name, "size": s.info().size, "folders": s.folders().len(), "items": all,
+                "open_ms": open_ms, "open_bytes_read": bytes_open, "open_page_reads": pages_open,
+                "list_largest_folder_ms": list_ms, "list_largest_folder_items": rows.len(),
+                "list_whole_box_ms": all_ms, "open_one_item_ms": item_ms,
+                "page_reads": pages, "bytes_read": bytes, "items_read": s.items_read(), "hash_ms": hash_ms,
+            });
+            if json {
+                return print(&r);
+            }
+            println!(
+                "{} ({}) : ouverture {open_ms:.1} ms ({:.1} Mo lus) · plus gros dossier {} éléments en {list_ms:.1} ms · toute la boîte {all} lignes en {all_ms:.1} ms · un élément ouvert en {item_ms:.1} ms · {} lu(s) · empreinte {hash_ms:.0} ms",
+                s.info().name,
+                human(s.info().size),
+                bytes_open as f64 / 1e6,
+                rows.len(),
+                s.items_read()
+            );
         }
     }
     Ok(())
