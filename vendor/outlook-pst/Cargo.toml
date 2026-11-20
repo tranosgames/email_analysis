@@ -1,0 +1,20 @@
+# Copie embarquée et auditée de outlook-pst (Microsoft, MIT) avec les correctifs du fork
+# outlook-pst-ost 1.3.0 et une modification propre à MailForensics : voir NOTICE.md.
+[package]
+name = "outlook-pst"
+version = "1.3.0+mailforensics.1"
+edition = "2021"
+rust-version = "1.82"
+license = "MIT"
+description = "Outlook PST Store Provider in Rust (copie embarquée, lecture seule)"
+publish = false
+
+[lib]
+name = "outlook_pst"
+path = "src/lib.rs"
+
+[dependencies]
+byteorder = "1"
+flate2 = "1"
+thiserror = "2"
+tracing = "0.1"

@@ -7,9 +7,11 @@
 
 mod props;
 pub mod rtf;
+mod source;
 
 use mf_core::{Address, Attachment, Disposition, EngineError, MAX_NESTING, Message, hashes};
 use props::Node;
+pub use source::{PropertySource, decode_codepage, filetime};
 use std::collections::BTreeMap;
 use std::io::Read;
 
@@ -111,7 +113,8 @@ fn address(
     }
 }
 
-fn convert(node: &Node<'_>, depth: usize) -> Message {
+/// Convertit un objet MAPI (message d'un `.msg` ou d'une boîte PST/OST) vers le modèle unifié.
+pub fn convert<P: PropertySource>(node: &P, depth: usize) -> Message {
     let mut out = Message {
         subject: node.string(PR_SUBJECT),
         ..Default::default()
@@ -156,14 +159,14 @@ fn convert(node: &Node<'_>, depth: usize) -> Message {
     }
 
     // Destinataires.
-    for recip in node.children("__recip_version1.0_#") {
+    for recip in node.recipients() {
         let r = address(
             recip.string(PR_DISPLAY_NAME),
             recip.string(PR_EMAIL_ADDRESS),
             recip.string(PR_ADDRTYPE),
             recip.string(PR_SMTP_ADDRESS),
         );
-        match recip.fixed_u32(PR_RECIPIENT_TYPE).map(|t| t & 0x0F) {
+        match recip.u32(PR_RECIPIENT_TYPE).map(|t| t & 0x0F) {
             Some(2) => out.cc.push(r),
             Some(3) => out.bcc.push(r),
             _ => out.to.push(r),
@@ -178,7 +181,7 @@ fn convert(node: &Node<'_>, depth: usize) -> Message {
         (PR_CREATION_TIME, "PR_CREATION_TIME"),
     ]
     .into_iter()
-    .find_map(|(id, n)| node.fixed_time(id).map(|t| (t, n)))
+    .find_map(|(id, n)| node.time(id).map(|t| (t, n)))
     .map_or((None, None), |(t, n)| (Some(t), Some(n)));
     out.date_utc = date_prop.map(|t| t.to_rfc3339());
     if out.date_raw.is_none() {
@@ -202,11 +205,12 @@ fn convert(node: &Node<'_>, depth: usize) -> Message {
     out.body_text = node.string(PR_BODY);
     out.body_html = node
         .binary(PR_HTML)
-        .map(|b| node.decode_internet(b))
+        .map(|b| node.decode_internet(&b))
         .or_else(|| node.string(PR_HTML));
     if out.body_html.is_some() {
         out.html_source = Some("html".into());
     } else if let Some(compressed) = node.binary(PR_RTF_COMPRESSED) {
+        let compressed: &[u8] = &compressed;
         // FR-041 : Outlook conserve souvent la mise en forme uniquement en RTF compressé, avec
         // le HTML d'origine encapsulé (MS-OXRTFEX).
         match rtf::decompress(compressed).map(|r| rtf::convert(&r)) {
@@ -233,20 +237,16 @@ fn convert(node: &Node<'_>, depth: usize) -> Message {
     let referenced = |cid: Option<&str>| {
         cid.is_some_and(|c| html_lower.contains(&format!("cid:{}", c.to_ascii_lowercase())))
     };
-    for (i, att) in node
-        .children("__attach_version1.0_#")
-        .into_iter()
-        .enumerate()
-    {
+    for (i, att) in node.attachments().into_iter().enumerate() {
         let index = i as u32 + 1;
-        let method = att.fixed_u32(PR_ATTACH_METHOD);
+        let method = att.u32(PR_ATTACH_METHOD);
         let content_id = att.string(PR_ATTACH_CONTENT_ID);
-        let hidden = att.fixed_bool(PR_ATTACHMENT_HIDDEN).unwrap_or(false);
+        let hidden = att.bool(PR_ATTACHMENT_HIDDEN).unwrap_or(false);
         let mut filename = att
             .string(PR_ATTACH_LONG_FILENAME)
             .or_else(|| att.string(PR_ATTACH_FILENAME))
             .or_else(|| att.string(PR_DISPLAY_NAME));
-        let embedded_node = att.object(PR_ATTACH_DATA);
+        let embedded_node = att.embedded();
         let embedded_node_is_none = embedded_node.is_none();
         let (data, size, sha256, md5, embedded) = match embedded_node {
             Some(sub) => {
@@ -273,7 +273,7 @@ fn convert(node: &Node<'_>, depth: usize) -> Message {
             None => {
                 let data = att
                     .binary(PR_ATTACH_DATA)
-                    .map(<[u8]>::to_vec)
+                    .map(std::borrow::Cow::into_owned)
                     .unwrap_or_default();
                 let (s, m) = hashes(&data);
                 (data.clone(), data.len() as u64, s, m, None)

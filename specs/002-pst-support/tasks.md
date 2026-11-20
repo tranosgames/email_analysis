@@ -27,10 +27,10 @@ corpus : `tests/corpus/pst/`. Numérotation propre à la feature, préfixe `P`.
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-- [ ] P001 Copier `outlook-pst` 1.2 dans `vendor/outlook-pst/` (LICENSE MIT et `NOTICE.md` décrivant l'origine et chaque modification), le déclarer dans `[workspace.dependencies]` par chemin, et vérifier sa compilation native et `wasm32-unknown-unknown`
-- [ ] P002 [P] Constituer `tests/corpus/pst/` : `32-bit.pst` (ANSI), `support.pst`, `dist-list.pst`, `passworded.pst` versionnés ; `fetch.sh` pour Enron 14 Mo et 29 Mo, les 3 OST et l'export Gmail 56 Mo (URL figées, SHA-256 vérifiés, dossier `large/` ignoré par git) ; `README.md` (origine, licence, empreinte de chaque fichier)
-- [ ] P003 [P] Script `tests/corpus/pst/oracle.py` (libpff) produisant `expected.json` : par fichier, format, encodage, et par dossier (chemin) le nombre d'éléments et de pièces jointes ; versionner `expected.json`
-- [ ] P004 [P] Créer la crate `crates/mf-pst` (`#![forbid(unsafe_code)]`, `deny(unwrap_used, panic)`), membre du workspace
+- [x] P001 Copier `outlook-pst` 1.2 dans `vendor/outlook-pst/` (LICENSE MIT et `NOTICE.md` décrivant l'origine et chaque modification), le déclarer dans `[workspace.dependencies]` par chemin, et vérifier sa compilation native et `wasm32-unknown-unknown`
+- [x] P002 [P] Constituer `tests/corpus/pst/` : `32-bit.pst` (ANSI), `support.pst`, `dist-list.pst`, `passworded.pst` versionnés ; `fetch.sh` pour Enron 14 Mo et 29 Mo, les 3 OST et l'export Gmail 56 Mo (URL figées, SHA-256 vérifiés, dossier `large/` ignoré par git) ; `README.md` (origine, licence, empreinte de chaque fichier)
+- [x] P003 [P] Script `tests/corpus/pst/oracle.py` (libpff) produisant `expected.json` : par fichier, format, encodage, et par dossier (chemin) le nombre d'éléments et de pièces jointes ; versionner `expected.json`
+- [x] P004 [P] Créer la crate `crates/mf-pst` (`#![forbid(unsafe_code)]`, `deny(unwrap_used, panic)`), membre du workspace
 
 ---
 
@@ -38,13 +38,13 @@ corpus : `tests/corpus/pst/`. Numérotation propre à la feature, préfixe `P`.
 
 **⚠️ CRITICAL**: aucune user story ne commence avant la fin de cette phase.
 
-- [ ] P005 Test : `crates/mf-pst/tests/oracle.rs` — pour chaque fichier présent de `expected.json`, compter éléments et pièces jointes par dossier (doit échouer : crate vide)
-- [ ] P006 Appliquer `spikes/pst-browser/outlook-pst-tolerance.patch` à `vendor/outlook-pst/` (compteur d'espace libre, messages sans sous-nœuds) ; consigner dans `NOTICE.md`
-- [ ] P007 Retirer de la copie embarquée le chemin d'écriture (`writer`, `start_write`, reconstruction AMap) et remplacer les `unwrap`/`panic` déclenchables par le contenu du fichier par des erreurs ; test : PST tronqués et altérés générés depuis `support.pst` (`tests/corpus/pst/malformed/`) → erreur, jamais de panique
-- [ ] P008 [P] `crates/mf-pst/src/source.rs` : trait `ByteSource`, `FileSource` (lecture positionnée), `MemSource`, lecteur paginé `Paged` (pages de 512 Ko, LRU 16, compteurs) ; tests unitaires de lecture à cheval sur deux pages et en fin de fichier
-- [ ] P009 [P] `crates/mf-core/src/model.rs` : `Provenance`, `ItemSummary`, `Store`, `Folder`, `UnreadableItem`, `BoxFilter` (data-model.md) ; champ `provenance: Option<Provenance>` dans `Message`
-- [ ] P010 `crates/mf-msg/src/source.rs` : trait `PropertySource` (chaîne avec page de code, binaire, u32, date, booléen, destinataires, pièces jointes, message embarqué) ; `convert` générique ; implémentation sur le fichier composé ; tous les tests MSG existants restent verts (aucune régression)
-- [ ] P011 `crates/mf-pst/src/store.rs` : ouverture Unicode puis ANSI depuis un `ByteSource`, `Store` (format, encodage, protection par mot de passe, nom), parcours de l'arborescence IPM avec chemins et types de dossiers spéciaux, éléments illisibles collectés — P005 passe pour les PST
+- [x] P005 Test : `crates/mf-pst/tests/oracle.rs` — pour chaque fichier présent de `expected.json`, compter éléments et pièces jointes par dossier (doit échouer : crate vide)
+- [x] P006 Appliquer `spikes/pst-browser/outlook-pst-tolerance.patch` à `vendor/outlook-pst/` (compteur d'espace libre, messages sans sous-nœuds) ; consigner dans `NOTICE.md`
+- [x] P007 Retirer de la copie embarquée le chemin d'écriture (`writer`, `start_write`, reconstruction AMap) et remplacer les `unwrap`/`panic` déclenchables par le contenu du fichier par des erreurs ; test : PST tronqués et altérés générés depuis `support.pst` (`tests/corpus/pst/malformed/`) → erreur, jamais de panique
+- [x] P008 [P] `crates/mf-pst/src/source.rs` : trait `ByteSource`, `FileSource` (lecture positionnée), `MemSource`, lecteur paginé `Paged` (pages de 512 Ko, LRU 16, compteurs) ; tests unitaires de lecture à cheval sur deux pages et en fin de fichier
+- [x] P009 [P] `crates/mf-core/src/model.rs` : `Provenance`, `ItemSummary`, `Store`, `Folder`, `UnreadableItem`, `BoxFilter` (data-model.md) ; champ `provenance: Option<Provenance>` dans `Message`
+- [x] P010 `crates/mf-msg/src/source.rs` : trait `PropertySource` (chaîne avec page de code, binaire, u32, date, booléen, destinataires, pièces jointes, message embarqué) ; `convert` générique ; implémentation sur le fichier composé ; tous les tests MSG existants restent verts (aucune régression)
+- [x] P011 `crates/mf-pst/src/store.rs` : ouverture Unicode puis ANSI depuis un `ByteSource`, `Store` (format, encodage, protection par mot de passe, nom), parcours de l'arborescence IPM avec chemins et types de dossiers spéciaux, éléments illisibles collectés — P005 passe pour les PST
 
 **Checkpoint**: P005 vert pour tous les PST (hors OST) ; comptes identiques à libpff
 

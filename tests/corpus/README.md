@@ -24,3 +24,6 @@ Les clés et certificats de `keys/` sont jetables, générés pour ce corpus ; a
 | `malformed/truncated.msg` | 600 premiers octets de `ascii.msg` | MIT | OLE tronqué |
 
 Ne jamais ajouter ici de preuve réelle issue d'un dossier client.
+
+
+Les boîtes PST/OST sont décrites dans [`pst/README.md`](pst/README.md).

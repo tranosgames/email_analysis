@@ -1,7 +1,9 @@
 //! Accès aux propriétés MAPI d'un objet (message, destinataire, pièce jointe) dans un MSG.
 
 use crate::Streams;
+use crate::source::{PropertySource, decode_codepage, filetime};
 use chrono::{DateTime, Utc};
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 const PT_LONG: u16 = 0x0003;
@@ -100,14 +102,7 @@ impl<'s> Node<'s> {
 
     /// PT_SYSTIME (FILETIME, intervalles de 100 ns depuis 1601-01-01) → UTC.
     pub fn fixed_time(&self, id: u16) -> Option<DateTime<Utc>> {
-        let ft = u64::from_le_bytes(*self.fixed(id, PT_SYSTIME)?);
-        if ft == 0 {
-            return None;
-        }
-        let unix_100ns = i128::from(ft) - 116_444_736_000_000_000;
-        let secs = i64::try_from(unix_100ns.div_euclid(10_000_000)).ok()?;
-        let nanos = u32::try_from(unix_100ns.rem_euclid(10_000_000) * 100).ok()?;
-        DateTime::from_timestamp(secs, nanos)
+        filetime(u64::from_le_bytes(*self.fixed(id, PT_SYSTIME)?))
     }
 
     /// Sous-objets (`__recip_version1.0_#…`, `__attach_version1.0_#…`) dans l'ordre.
@@ -164,17 +159,41 @@ impl<'s> Node<'s> {
 }
 
 fn decode(bytes: &[u8], codepage: Option<u32>) -> String {
-    let label = match codepage.unwrap_or(1252) {
-        65001 => "utf-8".to_string(),
-        20127 | 1252 => "windows-1252".to_string(),
-        932 => "shift_jis".to_string(),
-        936 => "gbk".to_string(),
-        949 => "euc-kr".to_string(),
-        950 => "big5".to_string(),
-        cp @ 28591..=28606 => format!("iso-8859-{}", cp - 28590),
-        cp => format!("windows-{cp}"),
-    };
-    let enc =
-        encoding_rs::Encoding::for_label(label.as_bytes()).unwrap_or(encoding_rs::WINDOWS_1252);
-    enc.decode(bytes).0.into_owned()
+    decode_codepage(bytes, codepage)
+}
+
+impl PropertySource for Node<'_> {
+    fn string(&self, id: u16) -> Option<String> {
+        Node::string(self, id)
+    }
+    fn binary(&self, id: u16) -> Option<Cow<'_, [u8]>> {
+        Node::binary(self, id).map(Cow::Borrowed)
+    }
+    fn decode_internet(&self, bytes: &[u8]) -> String {
+        Node::decode_internet(self, bytes)
+    }
+    fn u32(&self, id: u16) -> Option<u32> {
+        self.fixed_u32(id)
+    }
+    fn bool(&self, id: u16) -> Option<bool> {
+        self.fixed_bool(id)
+    }
+    fn time(&self, id: u16) -> Option<DateTime<Utc>> {
+        self.fixed_time(id)
+    }
+    fn recipients(&self) -> Vec<Self> {
+        self.children("__recip_version1.0_#")
+    }
+    fn attachments(&self) -> Vec<Self> {
+        self.children("__attach_version1.0_#")
+    }
+    fn embedded(&self) -> Option<Self> {
+        self.object(0x3701)
+    }
+    fn total_len(&self) -> u64 {
+        Node::total_len(self)
+    }
+    fn canonical_bytes(&self) -> Vec<u8> {
+        Node::canonical_bytes(self)
+    }
 }

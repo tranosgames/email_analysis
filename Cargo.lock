@@ -3189,6 +3189,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "mf-pst"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "md-5 0.11.0",
+ "mf-core",
+ "mf-msg",
+ "outlook-pst",
+ "serde_json",
+ "sha2 0.11.0",
+]
+
+[[package]]
 name = "mf-report"
 version = "0.1.0"
 dependencies = [
@@ -3679,6 +3692,16 @@ checksum = "9aa2b01e1d916879f73a53d01d1d6cee68adbb31d6d9177a8cfce093cced1d50"
 dependencies = [
  "futures-core",
  "pin-project-lite",
+]
+
+[[package]]
+name = "outlook-pst"
+version = "1.3.0+mailforensics.1"
+dependencies = [
+ "byteorder",
+ "flate2",
+ "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]

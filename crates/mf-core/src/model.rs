@@ -312,6 +312,96 @@ pub enum IocKind {
     Md5,
 }
 
+// ——— Boîtes PST / OST (feature 002) ———
+
+/// Emplacement d'un élément dans une boîte (FR-005).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Provenance {
+    pub store_name: String,
+    /// Vide tant que l'empreinte de la boîte est en cours de calcul.
+    pub store_sha256: String,
+    /// Du sommet de la boîte jusqu'au dossier de l'élément.
+    pub folder_path: Vec<String>,
+    /// Identifiant de nœud (NID) de l'élément.
+    pub node_id: u32,
+    /// Chemin dans les messages embarqués (indices de pièces jointes), vide pour l'élément lui-même.
+    #[serde(default)]
+    pub embedded_path: Vec<u32>,
+}
+
+impl Provenance {
+    /// `boite.pst › Boîte de réception › Fournisseurs`.
+    pub fn label(&self) -> String {
+        std::iter::once(self.store_name.as_str())
+            .chain(self.folder_path.iter().map(String::as_str))
+            .collect::<Vec<_>>()
+            .join(" › ")
+    }
+}
+
+/// Métadonnées d'une boîte (FR-001, FR-012).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StoreInfo {
+    pub name: String,
+    pub size: u64,
+    /// `unicode`, `ansi`, `ost4k`.
+    pub format: String,
+    /// `none`, `permute`, `cyclic`.
+    pub encoding: String,
+    pub password_protected: bool,
+    pub display_name: Option<String>,
+    pub folders: u32,
+    /// Somme des compteurs d'éléments des dossiers (sans ouvrir les éléments).
+    pub items: u64,
+    pub unreadable: Vec<UnreadableItem>,
+}
+
+/// Dossier d'une boîte, lu dans les tables de hiérarchie (FR-003).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FolderInfo {
+    pub id: u32,
+    pub parent: Option<u32>,
+    pub name: String,
+    pub path: Vec<String>,
+    /// `inbox`, `sent`, `deleted`, `drafts`, `outbox`, `junk`, `root`, `system`, `other`.
+    pub kind: String,
+    pub container_class: Option<String>,
+    pub item_count: u32,
+    pub unread_count: u32,
+    pub depth: u32,
+}
+
+/// Ligne de liste d'un élément, lue dans la table du dossier, sans ouvrir l'élément (FR-006).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ItemSummary {
+    pub id: u32,
+    pub folder: u32,
+    pub message_class: Option<String>,
+    pub subject: Option<String>,
+    /// Nom affiché de l'expéditeur : l'adresse n'est pas dans la table.
+    pub from_name: Option<String>,
+    pub to: Option<String>,
+    pub cc: Option<String>,
+    pub sent: Option<String>,
+    pub received: Option<String>,
+    pub size: Option<u32>,
+    pub has_attachments: bool,
+    pub message_id: Option<String>,
+    /// Renseignés une fois l'élément ouvert.
+    pub from_address: Option<String>,
+    pub verdict: Option<VerdictLevel>,
+}
+
+/// Élément ou dossier illisible, listé plutôt que masqué (FR-009).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UnreadableItem {
+    pub node_id: u32,
+    pub folder_path: Vec<String>,
+    /// `folder`, `item`, `attachment`.
+    pub kind: String,
+    pub reason: String,
+}
+
 /// Signature cryptographique d'un message (FR-049, FR-050).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -576,6 +666,9 @@ pub struct Message {
     /// Signatures PGP / S/MIME vérifiées hors-ligne (FR-049, FR-050).
     #[serde(default)]
     pub signatures: Vec<SignatureCheck>,
+    /// Emplacement d'un élément issu d'une boîte PST/OST (feature 002, FR-005).
+    #[serde(default)]
+    pub provenance: Option<Provenance>,
     /// Corps MIME brut tel que transmis (EML), pour la vérification DKIM ; jamais sérialisé.
     #[serde(skip)]
     pub raw_body: Option<Vec<u8>>,

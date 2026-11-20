@@ -1,0 +1,340 @@
+{
+ "generator": "libpff 20261030",
+ "files": [
+  {
+   "file": "32-bit.pst",
+   "size": 65536,
+   "sha256": "e1d6fc712ba5bc8df88a277ba54e8ccca5d5b78d74f92adb95fc079cf84d0b63",
+   "encoding": "permute",
+   "total_items": 1,
+   "total_attachments": 0,
+   "libpff_unreadable": 0,
+   "folders_with_items": [
+    {
+     "name": "Calendar",
+     "items": 1,
+     "attachments": 0
+    }
+   ]
+  },
+  {
+   "file": "dist-list.pst",
+   "size": 271360,
+   "sha256": "c86841da106036b5abe5a2141dc7644cbb2bf8b504873515eb35a2efeb8c28ac",
+   "encoding": "permute",
+   "total_items": 4,
+   "total_attachments": 2,
+   "libpff_unreadable": 1,
+   "folders_with_items": [
+    {
+     "name": "Calendar",
+     "items": 1,
+     "attachments": 2
+    },
+    {
+     "name": "Contacts",
+     "items": 2,
+     "attachments": 0
+    },
+    {
+     "name": "Freebusy Data",
+     "items": 1,
+     "attachments": 0
+    }
+   ]
+  },
+  {
+   "file": "passworded.pst",
+   "size": 271360,
+   "sha256": "e1085e210bc823fcfbdd1220da08b51423f3c39301c563a99dde71895f2af217",
+   "encoding": "permute",
+   "total_items": 3,
+   "total_attachments": 0,
+   "libpff_unreadable": 1,
+   "folders_with_items": [
+    {
+     "name": "Contacts",
+     "items": 2,
+     "attachments": 0
+    },
+    {
+     "name": "Freebusy Data",
+     "items": 1,
+     "attachments": 0
+    }
+   ]
+  },
+  {
+   "file": "support.pst",
+   "size": 1033216,
+   "sha256": "5872c9aec2e0aacd0f793f3ffa2a7e85eba1d873a1d2659fb01019d4de197a1c",
+   "encoding": "permute",
+   "total_items": 17,
+   "total_attachments": 2,
+   "libpff_unreadable": 0,
+   "folders_with_items": [
+    {
+     "name": "Drafts",
+     "items": 6,
+     "attachments": 0
+    },
+    {
+     "name": "Sent Messages",
+     "items": 11,
+     "attachments": 2
+    }
+   ]
+  },
+  {
+   "file": "large/enron-14.pst",
+   "size": 13984768,
+   "sha256": "6152489de3472be6f1f840935d34b6dbf5f62b025dd015929ea9cf66eb5a5b46",
+   "encoding": "permute",
+   "total_items": 71,
+   "total_attachments": 70,
+   "libpff_unreadable": 0,
+   "folders_with_items": [
+    {
+     "name": "MLOKAY (Non-Privileged)",
+     "items": 1,
+     "attachments": 1
+    },
+    {
+     "name": "Personal",
+     "items": 47,
+     "attachments": 51
+    },
+    {
+     "name": "Sent Items",
+     "items": 2,
+     "attachments": 0
+    },
+    {
+     "name": "Systems",
+     "items": 7,
+     "attachments": 2
+    },
+    {
+     "name": "TW-Commercial Group",
+     "items": 14,
+     "attachments": 16
+    }
+   ]
+  },
+  {
+   "file": "large/enron-29.pst",
+   "size": 28967936,
+   "sha256": "a59557b74f0dd72c421db9093084558f34e6fc00ee8cb0032f6475f6dd592252",
+   "encoding": "permute",
+   "total_items": 2178,
+   "total_attachments": 168,
+   "libpff_unreadable": 0,
+   "folders_with_items": [
+    {
+     "name": "All documents",
+     "items": 846,
+     "attachments": 7
+    },
+    {
+     "name": "Calendar",
+     "items": 791,
+     "attachments": 0
+    },
+    {
+     "name": "Contacts",
+     "items": 10,
+     "attachments": 0
+    },
+    {
+     "name": "Deleted Items",
+     "items": 441,
+     "attachments": 110
+    },
+    {
+     "name": "Drafts",
+     "items": 41,
+     "attachments": 22
+    },
+    {
+     "name": "Inbox",
+     "items": 4,
+     "attachments": 2
+    },
+    {
+     "name": "Notes inbox",
+     "items": 10,
+     "attachments": 3
+    },
+    {
+     "name": "Sent",
+     "items": 20,
+     "attachments": 0
+    },
+    {
+     "name": "Sent Items",
+     "items": 15,
+     "attachments": 24
+    }
+   ]
+  },
+  {
+   "file": "large/example-2013.ost",
+   "size": 16818176,
+   "sha256": "b18ff390d0c22273029ee580ab6025976af69a4f84e276d1b1c01a988650853d",
+   "encoding": "none",
+   "total_items": 3,
+   "total_attachments": 0,
+   "libpff_unreadable": 0,
+   "folders_with_items": [
+    {
+     "name": "Inbox",
+     "items": 2,
+     "attachments": 0
+    },
+    {
+     "name": "Sent Items",
+     "items": 1,
+     "attachments": 0
+    }
+   ]
+  },
+  {
+   "file": "large/gmail-takeout-56.pst",
+   "size": 56140800,
+   "sha256": "5b4efe643b271ad20f2a6525251ec1f59ca59c8a03d71832beacda2ac8bda296",
+   "encoding": "permute",
+   "total_items": 481,
+   "total_attachments": 0,
+   "libpff_unreadable": 0,
+   "folders_with_items": [
+    {
+     "name": "All_mail_Including_Spam_and_Trash_20241106",
+     "items": 481,
+     "attachments": 0
+    }
+   ]
+  },
+  {
+   "file": "large/outlook-com-a.ost",
+   "size": 16818176,
+   "sha256": "b884f6313e3507aaa38c1a70fecf2d9e4689923065a3324b61d4ae12887c862d",
+   "encoding": "none",
+   "total_items": 214,
+   "total_attachments": 11,
+   "libpff_unreadable": 15,
+   "folders_with_items": [
+    {
+     "name": "Calendar",
+     "items": 2,
+     "attachments": 0
+    },
+    {
+     "name": "Contacts",
+     "items": 3,
+     "attachments": 2
+    },
+    {
+     "name": "Deleted Items",
+     "items": 1,
+     "attachments": 5
+    },
+    {
+     "name": "Inbox",
+     "items": 5,
+     "attachments": 3
+    },
+    {
+     "name": "Journal",
+     "items": 1,
+     "attachments": 0
+    },
+    {
+     "name": "MeContact",
+     "items": 2,
+     "attachments": 0
+    },
+    {
+     "name": "Notes",
+     "items": 1,
+     "attachments": 0
+    },
+    {
+     "name": "PersonMetadata",
+     "items": 14,
+     "attachments": 0
+    },
+    {
+     "name": "Recipient Cache",
+     "items": 11,
+     "attachments": 0
+    },
+    {
+     "name": "Sent Items",
+     "items": 2,
+     "attachments": 0
+    },
+    {
+     "name": "Skype Contacts",
+     "items": 1,
+     "attachments": 0
+    },
+    {
+     "name": "Sync Issues",
+     "items": 1,
+     "attachments": 0
+    },
+    {
+     "name": "Tasks",
+     "items": 2,
+     "attachments": 1
+    },
+    {
+     "name": "United States holidays",
+     "items": 168,
+     "attachments": 0
+    }
+   ]
+  },
+  {
+   "file": "large/outlook-com-b.ost",
+   "size": 16818176,
+   "sha256": "daacd8d441428634e103b7c1e37fe1e5909256cc917551667049b5e84dfcf5f0",
+   "encoding": "none",
+   "total_items": 183,
+   "total_attachments": 34,
+   "libpff_unreadable": 0,
+   "folders_with_items": [
+    {
+     "name": "Calendar",
+     "items": 9,
+     "attachments": 8
+    },
+    {
+     "name": "Deleted Items",
+     "items": 1,
+     "attachments": 1
+    },
+    {
+     "name": "Inbox",
+     "items": 10,
+     "attachments": 22
+    },
+    {
+     "name": "Sent Items",
+     "items": 2,
+     "attachments": 3
+    },
+    {
+     "name": "Sync Issues",
+     "items": 1,
+     "attachments": 0
+    },
+    {
+     "name": "United States holidays",
+     "items": 160,
+     "attachments": 0
+    }
+   ]
+  }
+ ]
+}

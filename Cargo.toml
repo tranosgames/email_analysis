@@ -1,4 +1,6 @@
 [workspace]
+# Copie embarquée, compilée comme dépendance mais hors des lints du projet.
+exclude = ["vendor/outlook-pst"]
 resolver = "3"
 members = [
     "crates/mf-core",
@@ -6,6 +8,7 @@ members = [
     "crates/mf-msg",
     "crates/mf-analysis",
     "crates/mf-sig",
+    "crates/mf-pst",
     "crates/mf-engine",
     "crates/mf-cli",
     "crates/mf-report",
@@ -19,6 +22,7 @@ default-members = [
     "crates/mf-msg",
     "crates/mf-analysis",
     "crates/mf-sig",
+    "crates/mf-pst",
     "crates/mf-engine",
     "crates/mf-report",
     "crates/mf-cli",
@@ -39,6 +43,8 @@ mf-analysis = { path = "crates/mf-analysis" }
 mf-engine = { path = "crates/mf-engine" }
 mf-report = { path = "crates/mf-report" }
 mf-sig = { path = "crates/mf-sig" }
+mf-pst = { path = "crates/mf-pst" }
+outlook-pst = { path = "vendor/outlook-pst" }
 mail-parser = { version = "0.11", features = ["full_encoding"] }
 cfb = "0.15"
 encoding_rs = "0.8"
