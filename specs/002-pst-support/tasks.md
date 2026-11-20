@@ -68,9 +68,14 @@ corpus : `tests/corpus/pst/`. Numérotation propre à la feature, préfixe `P`.
 - [x] P016 [US1] `crates/mf-pst/src/hash.rs` : SHA-256 + MD5 en flux par blocs de 8 Mo, `hash_step(budget)` avec progression
 - [x] P017 [US1] `crates/mf-engine` : `open_box` et `BoxSession` (contracts/engine-api.md) ; `open_item` passe par l'analyse complète existante (clés, signatures)
 - [x] P018 [US1] `crates/mf-cli` : `mf pst info|tree|ls|show|report|bench` ; provenance dans `mf show` et dans le rapport HTML/JSON (`crates/mf-report`)
-- [ ] P019 [US1] Tauri : thread de travail par boîte (objets non `Send`), commandes `box_open|box_list|box_item|box_close`, événements de progression ; fichier `.pst`/`.ost` reconnu au dépôt et à l'ouverture de dossier ; même boîte déposée deux fois signalée en doublon par empreinte
-- [ ] P020 [US1] Interface : panneau d'arborescence (dossiers repliables, compteurs), liste virtualisée (50 000 lignes fluides), message ouvert avec toutes les vues, fil d'Ariane de provenance, progression de l'empreinte, liste des éléments illisibles
-- [ ] P021 [US1] Éléments non courriel (rendez-vous, contacts, tâches, notes) : classe affichée, propriétés principales, pas de verdict
+- [x] P019 [US1] Tauri : thread de travail par boîte (objets non `Send`), commandes `box_open|box_list|box_item|box_close`, événements de progression ; fichier `.pst`/`.ost` reconnu au dépôt et à l'ouverture de dossier ; même boîte déposée deux fois signalée en doublon par empreinte
+- [x] P020 [US1] Interface : panneau d'arborescence (dossiers repliables, compteurs), liste virtualisée (50 000 lignes fluides), message ouvert avec toutes les vues, fil d'Ariane de provenance, progression de l'empreinte, liste des éléments illisibles
+- [x] P021 [US1] Éléments non courriel (rendez-vous, contacts, tâches, notes) : classe affichée, propriétés principales, pas de verdict
+
+> Écarts assumés (MVP) : l'ouverture passe par `open_paths` (pas de `box_open` séparé) et la boîte reste
+> ouverte jusqu'à la fermeture de l'application (pas de `box_close`) ; le doublon est détecté par chemin
+> canonique à l'ouverture, l'empreinte n'étant connue qu'après le calcul en arrière-plan. Interface
+> vérifiée par `npm run test:box` (pont Tauri simulé, données produites par `mf` sur `support.pst`).
 
 **Checkpoint**: une boîte PST s'ouvre et se lit entièrement dans la CLI et l'application de bureau
 

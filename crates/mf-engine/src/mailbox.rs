@@ -29,7 +29,27 @@ pub struct BoxSession {
     digests: Option<Digests>,
     /// Dossier où chaque élément a été listé (provenance).
     item_folder: HashMap<u32, u32>,
+    /// Classe MAPI de chaque élément listé (`IPM.Note`, `IPM.Contact`…).
+    item_class: HashMap<u32, String>,
     analyzed: HashMap<u32, Analyzed>,
+}
+
+/// Élément de type courriel (message, accusé, invitation reçue par courriel) ; les autres
+/// éléments d'une boîte (rendez-vous, contacts, tâches, notes, journaux) ne reçoivent pas de verdict.
+pub fn is_mail(class: Option<&str>) -> bool {
+    let Some(c) = class else { return true };
+    let c = c.to_ascii_lowercase();
+    ![
+        "ipm.appointment",
+        "ipm.contact",
+        "ipm.distlist",
+        "ipm.task",
+        "ipm.stickynote",
+        "ipm.activity",
+        "ipm.journal",
+    ]
+    .iter()
+    .any(|p| c == *p || c.starts_with(&format!("{p}.")))
 }
 
 fn pst_err(e: impl std::fmt::Display) -> EngineError {
@@ -56,6 +76,7 @@ impl BoxSession {
             hasher: StreamHasher::new(total),
             digests: None,
             item_folder: HashMap::new(),
+            item_class: HashMap::new(),
             analyzed: HashMap::new(),
         })
     }
@@ -86,6 +107,9 @@ impl BoxSession {
         let mut rows = self.pst.list(folder).map_err(pst_err)?;
         for r in &mut rows {
             self.item_folder.insert(r.id, folder);
+            if let Some(c) = &r.message_class {
+                self.item_class.insert(r.id, c.clone());
+            }
             self.decorate(r);
         }
         Ok(rows)
@@ -129,6 +153,10 @@ impl BoxSession {
             let mut message = self.pst.open_item(id, folder, &sha).map_err(pst_err)?;
             expand_attached_messages(&mut message, 0);
             mf_analysis::analyze_with(&mut message, keys);
+            if !is_mail(self.item_class.get(&id).map(String::as_str)) {
+                // Rendez-vous, contact, tâche, note : pas de verdict de courriel (P021).
+                message.verdict = None;
+            }
             self.analyzed.insert(
                 id,
                 Analyzed {
@@ -140,6 +168,11 @@ impl BoxSession {
         self.analyzed
             .get(&id)
             .ok_or_else(|| EngineError::Parse("élément introuvable".into()))
+    }
+
+    /// Classe MAPI d'un élément déjà listé.
+    pub fn item_class(&self, id: u32) -> Option<&str> {
+        self.item_class.get(&id).map(String::as_str)
     }
 
     /// Oublie les analyses (nouveau trousseau de clés) ; les éléments seront relus à la demande.

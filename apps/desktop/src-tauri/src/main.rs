@@ -3,7 +3,9 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use mf_core::{Evidence, Message};
+mod mailbox;
+
+use mf_core::{Evidence, FolderInfo, ItemSummary, Message, StoreInfo};
 use mf_engine::{Analyzed, KeyEntry, Keyring};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -14,6 +16,8 @@ struct AppState {
     loaded: Mutex<Vec<Analyzed>>,
     /// Clés publiques et certificats importés par l'analyste (FR-049, FR-050).
     keys: Mutex<Keyring>,
+    /// Boîtes PST/OST ouvertes (feature 002), chacune sur son thread.
+    boxes: Mutex<Vec<mailbox::BoxHandle>>,
 }
 
 /// Ligne de la liste latérale (comme msg-reader : expéditeur, objet, date, badges).
@@ -35,9 +39,24 @@ struct Summary {
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum OpenResult {
-    Ready { summary: Summary },
-    Duplicate { path: String, of: usize },
-    Failed { path: String, error: String },
+    Ready {
+        summary: Summary,
+    },
+    /// Boîte PST/OST : arborescence seulement, les éléments sont lus à la demande.
+    Mailbox {
+        box_id: usize,
+        path: String,
+        store: StoreInfo,
+        folders: Vec<FolderInfo>,
+    },
+    Duplicate {
+        path: String,
+        of: usize,
+    },
+    Failed {
+        path: String,
+        error: String,
+    },
 }
 
 #[derive(Serialize)]
@@ -80,10 +99,11 @@ fn expand(paths: Vec<String>) -> Vec<PathBuf> {
         for p in entries {
             if p.is_dir() {
                 walk(&p, out);
-            } else if p
-                .extension()
-                .is_some_and(|e| e.eq_ignore_ascii_case("eml") || e.eq_ignore_ascii_case("msg"))
-            {
+            } else if p.extension().is_some_and(|e| {
+                ["eml", "msg", "pst", "ost"]
+                    .iter()
+                    .any(|x| e.eq_ignore_ascii_case(x))
+            }) {
                 out.push(p);
             }
         }
@@ -100,12 +120,20 @@ fn expand(paths: Vec<String>) -> Vec<PathBuf> {
 }
 
 #[tauri::command]
-fn open_paths(paths: Vec<String>, state: tauri::State<'_, AppState>) -> Vec<OpenResult> {
+fn open_paths(
+    paths: Vec<String>,
+    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Vec<OpenResult> {
     let files = expand(paths);
     let mut results = Vec::with_capacity(files.len());
     let keys = state.keys.lock().unwrap_or_else(|e| e.into_inner()).clone();
     for f in files {
         let path = f.display().to_string();
+        if is_mailbox(&f) {
+            results.push(open_mailbox(f, path, &state, app.clone()));
+            continue;
+        }
         match mf_engine::open_with(&f, &keys) {
             Ok(a) => {
                 let mut loaded = state.loaded.lock().unwrap_or_else(|e| e.into_inner());
@@ -129,6 +157,139 @@ fn open_paths(paths: Vec<String>, state: tauri::State<'_, AppState>) -> Vec<Open
         }
     }
     results
+}
+
+/// Signature `!BDN` des boîtes PST/OST.
+fn is_mailbox(p: &Path) -> bool {
+    use std::io::Read;
+    let mut head = [0u8; 4];
+    std::fs::File::open(p)
+        .and_then(|mut f| f.read_exact(&mut head))
+        .is_ok()
+        && mf_pst_magic(&head)
+}
+
+fn mf_pst_magic(head: &[u8]) -> bool {
+    head.starts_with(b"!BDN")
+}
+
+fn open_mailbox(
+    f: PathBuf,
+    path: String,
+    state: &tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> OpenResult {
+    let mut boxes = state.boxes.lock().unwrap_or_else(|e| e.into_inner());
+    let canon = std::fs::canonicalize(&f).unwrap_or_else(|_| f.clone());
+    if let Some(of) = boxes.iter().position(|b| b.path == canon) {
+        return OpenResult::Duplicate { path, of };
+    }
+    let box_id = boxes.len();
+    match mailbox::spawn(canon, box_id, app) {
+        Ok((handle, store, folders)) => {
+            boxes.push(handle);
+            OpenResult::Mailbox {
+                box_id,
+                path,
+                store,
+                folders,
+            }
+        }
+        Err(error) => OpenResult::Failed { path, error },
+    }
+}
+
+fn with_box<T>(
+    state: &tauri::State<'_, AppState>,
+    box_id: usize,
+    f: impl FnOnce(&mailbox::BoxHandle) -> Result<T, String>,
+) -> Result<T, String> {
+    let boxes = state.boxes.lock().unwrap_or_else(|e| e.into_inner());
+    let h = boxes.get(box_id).ok_or("boîte inconnue")?;
+    f(h)
+}
+
+/// Lignes d'un dossier, lues dans sa table, sans ouvrir les éléments (FR-006).
+#[tauri::command]
+fn box_list(
+    box_id: usize,
+    folder: u32,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<ItemSummary>, String> {
+    with_box(&state, box_id, |h| {
+        mailbox::ask(h, |reply| mailbox::Req::List { folder, reply })
+    })
+}
+
+/// Ouvre et analyse un élément (le seul appel qui lit un message).
+#[tauri::command]
+fn box_item(
+    box_id: usize,
+    id: u32,
+    state: tauri::State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let keys = state.keys.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let (evidence, message) = with_box(&state, box_id, |h| {
+        mailbox::ask(h, |reply| mailbox::Req::Item { id, keys, reply })
+    })?;
+    serde_json::to_value(MessageView {
+        evidence: &evidence,
+        message: &message,
+    })
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn box_report(
+    box_id: usize,
+    id: u32,
+    path: Vec<u32>,
+    format: String,
+    generated: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    let keys = state.keys.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    with_box(&state, box_id, |h| {
+        mailbox::ask(h, |reply| mailbox::Req::Report {
+            id,
+            path,
+            format,
+            generated,
+            keys,
+            reply,
+        })
+    })
+}
+
+#[tauri::command]
+fn box_save_attachment(
+    box_id: usize,
+    id: u32,
+    path: Vec<u32>,
+    index: u32,
+    dest: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    let keys = state.keys.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let (box_path, (_, sha, data)) = with_box(&state, box_id, |h| {
+        let x = mailbox::ask(h, |reply| mailbox::Req::Extract {
+            id,
+            path,
+            index,
+            keys,
+            reply,
+        })?;
+        Ok((h.path.clone(), x))
+    })?;
+    let dest = PathBuf::from(dest);
+    let dest_dir = dest.parent().and_then(|d| std::fs::canonicalize(d).ok());
+    if dest_dir.is_some() && dest_dir == box_path.parent().map(PathBuf::from) {
+        return Err(
+            "Destination refusée : choisissez un autre dossier que celui de la preuve.".into(),
+        );
+    }
+    std::fs::write(&dest, &data).map_err(|e| format!("{}: {e}", dest.display()))?;
+    Ok(sha)
 }
 
 /// Message racine (`path` vide) ou embarqué (`path` = indices de PJ successifs).
@@ -296,6 +457,9 @@ fn list_keys(state: tauri::State<'_, AppState>) -> Vec<KeyEntry> {
 #[tauri::command]
 fn reanalyze_all(state: tauri::State<'_, AppState>) -> Result<Vec<Summary>, String> {
     let keys = state.keys.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    for b in state.boxes.lock().unwrap_or_else(|e| e.into_inner()).iter() {
+        let _ = b.tx.send(mailbox::Req::Forget);
+    }
     let mut loaded = state.loaded.lock().unwrap_or_else(|e| e.into_inner());
     for a in loaded.iter_mut() {
         let fresh =
@@ -346,7 +510,11 @@ fn main() {
             remove_key,
             list_keys,
             reanalyze_all,
-            open_verification_link
+            open_verification_link,
+            box_list,
+            box_item,
+            box_report,
+            box_save_attachment
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

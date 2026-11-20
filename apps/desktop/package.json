@@ -10,7 +10,8 @@
     "dev:web": "npm run wasm && vite --mode web",
     "build:web": "npm run wasm && tsc --noEmit && vite build --mode web",
     "test:web": "python3 tests/web_e2e.py",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test:box": "node tests/box_ui_e2e.cjs"
   },
   "dependencies": {
     "@fontsource/atkinson-hyperlegible": "^5.3.0",

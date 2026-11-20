@@ -2,7 +2,8 @@
 
 **Déposez un courriel suspect. En une seconde : un verdict, les preuves qui le fondent, et tout ce qu'il faut pour agir.**
 
-Email Analysis est un outil d'investigation forensic pour les fichiers **`.eml`** et **`.msg`** (Outlook).
+Email Analysis est un outil d'investigation forensic pour les fichiers **`.eml`** et **`.msg`** (Outlook),
+et pour les boîtes Outlook **`.pst`** / **`.ost`** dans l'application de bureau.
 Il lit le message comme un analyste le ferait — d'où il vient vraiment, qui l'a signé, où mènent
 ses liens, ce que cachent ses pièces jointes — et le restitue dans une interface claire, un rapport
 imprimable et des indicateurs prêts à bloquer.
@@ -71,6 +72,21 @@ et en pastille dans la liste, avec les raisons qui le fondent. Le verdict est pr
 - Les messages Outlook dont la mise en forme n'existe qu'en RTF retrouvent leur HTML d'origine.
 - Tous les en-têtes bruts d'un clic (touche `H`), thème clair ou sombre, plein écran.
 
+### Les boîtes Outlook entières
+
+Déposez un `.pst` ou un `.ost` : l'arborescence s'affiche aussitôt, avec le nombre d'éléments de
+chaque dossier. Rien d'autre n'est lu. Ouvrez un dossier : ses lignes viennent de la table du
+dossier, sans ouvrir un seul message. **Seul le message sur lequel vous cliquez est lu et analysé**,
+avec exactement la même analyse qu'un `.eml` — verdict, acheminement, liens, pièces jointes,
+signatures — et un fil d'Ariane qui donne sa provenance (boîte › dossier › élément).
+
+L'empreinte SHA-256 / MD5 de la boîte se calcule en arrière-plan par petits pas ; elle est reportée
+sur chaque rapport. La boîte est ouverte en lecture seule et jamais chargée en entière en mémoire :
+une boîte de plusieurs gigaoctets s'ouvre en quelques millisecondes. PST Unicode et ANSI, OST
+Outlook 2013 et plus récents. Les contacts, rendez-vous et tâches s'affichent sans verdict.
+
+![Une boîte PST : arborescence, liste du dossier et message ouvert avec sa provenance](docs/apercu-pst.png)
+
 ### Restituer
 
 - **Indicateurs** (adresses, domaines, IP publiques, URL, empreintes) dédoublonnés et défangés :
@@ -132,6 +148,16 @@ mf report suspect.eml --out rapport.html         # rapport (ou --format json)
 mf show signe.eml --keys ./cles/                 # vérifier PGP / S/MIME avec vos clés
 ```
 
+Les boîtes Outlook ont leurs propres commandes, qui ne lisent que ce qu'on leur demande :
+
+```console
+mf pst info boite.pst                            # format, dossiers, éléments, empreinte
+mf pst tree boite.pst                            # arborescence avec compteurs
+mf pst ls boite.pst --folder "Inbox"             # lignes d'un dossier (table du dossier)
+mf pst show boite.pst --id 2097220 --headers     # lire et analyser un seul élément
+mf pst report boite.pst --id 2097220 --out r.html
+```
+
 Toutes les commandes acceptent `--json`.
 
 ### Raccourcis clavier
@@ -156,11 +182,13 @@ crates/
 ├── mf-msg        format Outlook (.msg) : conteneur OLE, propriétés MAPI, RTF compressé
 ├── mf-analysis   acheminement, SPF/DKIM/DMARC, liens, pièces jointes, QR codes, constats, verdict
 ├── mf-sig        signatures PGP et S/MIME
+├── mf-pst        boîtes .pst / .ost : lecture paginée, arborescence, éléments à la demande
 ├── mf-report     rapports HTML et JSON, export des indicateurs
 ├── mf-engine     point d'entrée commun
 ├── mf-cli        ligne de commande « mf »
 └── mf-wasm       moteur compilé pour le navigateur
 apps/desktop/     interface TypeScript commune : application Tauri 2 et version web
+vendor/           lecteur PST de Microsoft (MIT), audité et passé en lecture seule
 tests/corpus/     messages de référence, réels et synthétiques (phishing, quishing, signés…)
 specs/            spécifications, plan et tâches du projet
 ```
@@ -175,6 +203,7 @@ cd apps/desktop
 npm run dev:web      # version web sur http://localhost:5173
 npm run build:web    # page statique dans dist-web/
 npm run test:web     # tests de bout en bout dans un vrai navigateur
+npm run test:box     # interface des boîtes PST, avec un pont simulé
 ```
 
 La version web demande en plus la cible `wasm32-unknown-unknown` et `wasm-bindgen-cli` 0.2.129.
@@ -187,7 +216,8 @@ dans `specs/`, puis d'un plan et de tâches cochées au fil de l'implémentation
 
 ## Et ensuite
 
-- **Boîtes Outlook `.pst` / `.ost`** : ouvrir une boîte entière, la parcourir et la fouiller.
+- **Boîtes Outlook, suite** : filtres sur les colonnes des dossiers, ouverture dans la version web,
+  export des éléments analysés.
 - **Listes de l'équipe** : domaines légitimes de l'organisation, listes de blocage importées,
   règles maison prises en compte par le verdict.
 - Contenu des archives et des documents Office.

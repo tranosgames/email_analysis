@@ -6,11 +6,15 @@ initTheme();
 import { FileHandler } from "./FileHandler";
 import { MessageHandler } from "./MessageHandler";
 import { UIManager } from "./UIManager";
-import { restoreKeys, warmUp } from "./ipc";
+import { onBoxHash, restoreKeys, warmUp } from "./ipc";
 
 const state = new MessageHandler();
 const ui = new UIManager(state);
 const files = new FileHandler(state);
+void onBoxHash((h) => {
+  state.setHash(h);
+  ui.showBoxHash(h);
+});
 
 document.addEventListener("keydown", (e) => {
   const target = e.target as HTMLElement;

@@ -274,6 +274,8 @@ export interface Message {
   verdict: Verdict | null;
   /** Signatures PGP / S/MIME (FR-049, FR-050). */
   signatures: SignatureCheck[];
+  /** Emplacement dans une boîte PST/OST (feature 002). */
+  provenance: Provenance | null;
   /** « html » : corps HTML d'origine ; « rtf » : HTML reconstitué depuis le RTF Outlook (FR-041). */
   html_source: "html" | "rtf" | null;
   attachments: Attachment[];
@@ -303,8 +305,69 @@ export interface Summary {
   verdict: VerdictLevel | null;
 }
 
+// ——— Boîtes PST / OST (feature 002) ———
+
+export interface StoreInfo {
+  name: string;
+  size: number;
+  format: "unicode" | "ansi" | "ost4k";
+  encoding: string;
+  password_protected: boolean;
+  display_name: string | null;
+  folders: number;
+  items: number;
+  unreadable: { node_id: number; folder_path: string[]; kind: string; reason: string }[];
+}
+
+export interface FolderInfo {
+  id: number;
+  parent: number | null;
+  name: string;
+  path: string[];
+  kind: "inbox" | "sent" | "deleted" | "drafts" | "outbox" | "junk" | "root" | "ipm" | "search" | "system" | "other";
+  container_class: string | null;
+  item_count: number;
+  unread_count: number;
+  depth: number;
+}
+
+/** Ligne de liste lue dans la table du dossier, sans ouvrir l'élément. */
+export interface ItemSummary {
+  id: number;
+  folder: number;
+  message_class: string | null;
+  subject: string | null;
+  from_name: string | null;
+  to: string | null;
+  cc: string | null;
+  sent: string | null;
+  received: string | null;
+  size: number | null;
+  has_attachments: boolean;
+  message_id: string | null;
+  from_address: string | null;
+  verdict: VerdictLevel | null;
+}
+
+export interface Provenance {
+  store_name: string;
+  store_sha256: string;
+  folder_path: string[];
+  node_id: number;
+  embedded_path: number[];
+}
+
+export interface BoxHash {
+  box_id: number;
+  done: number;
+  total: number;
+  sha256: string | null;
+  md5: string | null;
+}
+
 export type OpenResult =
   | { kind: "ready"; summary: Summary }
+  | { kind: "mailbox"; box_id: number; path: string; store: StoreInfo; folders: FolderInfo[] }
   | { kind: "duplicate"; path: string; of: number }
   | { kind: "failed"; path: string; error: string };
 
@@ -407,6 +470,14 @@ function summarize(id: number, v: MessageView): Summary {
 async function openWebFiles(files: WebFile[]): Promise<OpenResult[]> {
   const results: OpenResult[] = [];
   for (const { path, file } of files) {
+    if (/\.(pst|ost)$/i.test(path)) {
+      results.push({
+        kind: "failed",
+        path,
+        error: "les boîtes PST/OST s'ouvrent pour l'instant dans l'application de bureau",
+      });
+      continue;
+    }
     if (file.size > WEB_MAX_SIZE) {
       results.push({
         kind: "failed",
@@ -541,7 +612,7 @@ export async function pickPaths(directory: boolean): Promise<string[]> {
   const picked = await open({
     multiple: true,
     directory,
-    filters: directory ? undefined : [{ name: "Courriels", extensions: ["eml", "msg"] }],
+    filters: directory ? undefined : [{ name: "Courriels et boîtes Outlook", extensions: ["eml", "msg", "pst", "ost"] }],
   });
   if (!picked) return [];
   return Array.isArray(picked) ? picked : [picked];
@@ -681,4 +752,37 @@ export async function openVerificationLink(link: ExternalLink): Promise<boolean>
   if (inTauri) await invoke("open_verification_link", { url: link.url });
   else window.open(link.url, "_blank", "noopener,noreferrer");
   return true;
+}
+
+// ——— Boîtes PST / OST (feature 002, application de bureau) ———
+
+/** Lignes d'un dossier, lues dans sa table, sans ouvrir les éléments. */
+export async function boxList(boxId: number, folder: number): Promise<ItemSummary[]> {
+  if (!inTauri) throw new Error("boîtes PST/OST : application de bureau");
+  return invoke<ItemSummary[]>("box_list", { boxId, folder });
+}
+
+/** Ouvre et analyse un élément : le seul appel qui lit un message. */
+export async function boxItem(boxId: number, id: number): Promise<MessageView> {
+  if (!inTauri) throw new Error("boîtes PST/OST : application de bureau");
+  return invoke<MessageView>("box_item", { boxId, id });
+}
+
+export async function boxReport(boxId: number, id: number, path: number[], format: "html" | "json"): Promise<string> {
+  return invoke<string>("box_report", { boxId, id, path, format, generated: nowUtc() });
+}
+
+export async function boxSaveAttachment(boxId: number, id: number, path: number[], att: Attachment): Promise<string | null> {
+  const { save } = await import("@tauri-apps/plugin-dialog");
+  const dest = await save({ defaultPath: att.filename.replace(/[\\/]/g, "_"), title: "Enregistrer la pièce jointe" });
+  if (!dest) return null;
+  await invoke<string>("box_save_attachment", { boxId, id, path, index: att.index, dest });
+  return dest;
+}
+
+/** Progression du calcul d'empreinte des boîtes. */
+export async function onBoxHash(fn: (h: BoxHash) => void): Promise<void> {
+  if (!inTauri) return;
+  const { listen } = await import("@tauri-apps/api/event");
+  await listen<BoxHash>("box-hash", (e) => fn(e.payload));
 }

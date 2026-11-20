@@ -129,17 +129,28 @@ fn every_item_of_small_boxes_converts() {
         "dist-list.pst",
         "passworded.pst",
     ] {
+        let mut others = 0;
         let mut s = BoxSession::open_path(&pst(rel)).unwrap();
         let folders: Vec<u32> = s.folders().iter().map(|f| f.id).collect();
         let mut n = 0;
         for f in folders {
             for r in s.list(f).unwrap() {
-                s.open_item(r.id, &Keyring::default())
+                let a = s
+                    .open_item(r.id, &Keyring::default())
                     .unwrap_or_else(|e| panic!("{rel} {} : {e}", r.id));
+                // P021 : seuls les courriels reçoivent un verdict.
+                let mail = mf_engine::is_mail(r.message_class.as_deref());
+                assert_eq!(a.message.verdict.is_some(), mail, "{rel} {}", r.id);
+                if !mail {
+                    others += 1;
+                }
                 n += 1;
             }
         }
         assert!(n > 0, "{rel}");
         assert_eq!(s.items_read(), n);
+        if rel == "dist-list.pst" {
+            assert!(others > 0, "une liste de distribution n'a pas de verdict");
+        }
     }
 }

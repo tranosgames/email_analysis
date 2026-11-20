@@ -5,7 +5,7 @@
 
 pub mod mailbox;
 
-pub use mailbox::{BoxSession, HashProgress};
+pub use mailbox::{BoxSession, HashProgress, is_mail};
 pub use mf_core::safe_file_name;
 use mf_core::{EngineError, Evidence, Format, Message};
 pub use mf_sig::{KeyEntry, Keyring, is_verification_link};
