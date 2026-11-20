@@ -1,0 +1,8 @@
+<!doctype html><meta charset="utf-8"><input type="file" id="f"><pre id="out"></pre>
+<script type="module">
+document.getElementById("f").onchange = (e) => {
+  const w = new Worker("./worker.js", { type: "module" });
+  w.onmessage = (m) => { document.getElementById("out").textContent = JSON.stringify(m.data); };
+  w.postMessage(e.target.files[0]);
+};
+</script>
