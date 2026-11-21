@@ -222,7 +222,13 @@ pub(crate) fn decode_entities(s: &str) -> String {
     while let Some(i) = rest.find('&') {
         out.push_str(&rest[..i]);
         rest = &rest[i..];
-        let Some(end) = rest[..rest.len().min(12)].find(';') else {
+        // Recherche sur les octets : une coupure à 12 octets peut tomber au milieu d'un caractère
+        // (« &‘ » dans un objet de courriel faisait paniquer l'analyse). `;` est ASCII, donc la
+        // position trouvée est toujours une frontière de caractère.
+        let Some(end) = rest.as_bytes()[..rest.len().min(12)]
+            .iter()
+            .position(|b| *b == b';')
+        else {
             out.push('&');
             rest = &rest[1..];
             continue;
@@ -262,6 +268,14 @@ pub(crate) fn decode_entities(s: &str) -> String {
 mod tests {
     use super::*;
     use mf_core::Header;
+
+    #[test]
+    fn entities_next_to_multibyte_text_do_not_panic() {
+        // Cas réel (boîte Gmail exportée en PST) : « & » suivi de guillemets typographiques.
+        assert_eq!(decode_entities("Tom & ‘Jerry’"), "Tom & ‘Jerry’");
+        assert_eq!(decode_entities("a&éééééé;b"), "a&éééééé;b");
+        assert_eq!(decode_entities("x &amp; ‘y’ &#233;"), "x & ‘y’ é");
+    }
 
     fn msg(html: &str, text: &str) -> Message {
         Message {

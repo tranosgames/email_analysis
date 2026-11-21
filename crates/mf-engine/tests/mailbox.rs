@@ -154,3 +154,47 @@ fn every_item_of_small_boxes_converts() {
         }
     }
 }
+
+/// Tous les éléments des grandes boîtes (tests/corpus/pst/large, voir fetch.sh) s'ouvrent et
+/// s'analysent. Long : `cargo test --release -p mf-engine --test mailbox -- --ignored`.
+#[test]
+#[ignore]
+fn every_item_of_large_boxes_converts() {
+    let dir = pst("large");
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        eprintln!("ignoré : lancer tests/corpus/pst/fetch.sh");
+        return;
+    };
+    let mut files: Vec<_> = entries.filter_map(|e| e.ok().map(|e| e.path())).collect();
+    files.sort();
+    for path in files {
+        if !matches!(
+            path.extension().and_then(|e| e.to_str()),
+            Some("pst" | "ost")
+        ) {
+            continue;
+        }
+        let mut s = BoxSession::open_path(&path).unwrap();
+        let folders: Vec<u32> = s
+            .folders()
+            .iter()
+            .filter(|f| f.kind != "search")
+            .map(|f| f.id)
+            .collect();
+        let (mut n, mut failed) = (0u64, Vec::new());
+        for f in folders {
+            for r in s.list(f).unwrap() {
+                if let Err(e) = s.open_item(r.id, &Keyring::default()) {
+                    failed.push(format!("{} : {e}", r.id));
+                }
+                n += 1;
+            }
+        }
+        eprintln!(
+            "{} : {n} éléments, {} en échec",
+            path.display(),
+            failed.len()
+        );
+        assert!(failed.is_empty(), "{} : {failed:?}", path.display());
+    }
+}

@@ -44,6 +44,16 @@
    ]
   },
   {
+   "file": "empty.pst",
+   "size": 271360,
+   "sha256": "c16ae985d12011ad510ccb3b10f19d61b0c3b3311fa4696fb56b87812bd8d5c5",
+   "encoding": "permute",
+   "total_items": 0,
+   "total_attachments": 0,
+   "libpff_unreadable": 0,
+   "folders_with_items": []
+  },
+  {
    "file": "passworded.pst",
    "size": 271360,
    "sha256": "e1085e210bc823fcfbdd1220da08b51423f3c39301c563a99dde71895f2af217",
@@ -199,6 +209,78 @@
    ]
   },
   {
+   "file": "large/gmail-takeout-16a.pst",
+   "size": 16524288,
+   "sha256": "252b7d53a93330a7b72ff8ad66d9ddb7845613cf4696093909925055646a14bd",
+   "encoding": "permute",
+   "total_items": 238,
+   "total_attachments": 0,
+   "libpff_unreadable": 0,
+   "folders_with_items": [
+    {
+     "name": "Category Personal",
+     "items": 1,
+     "attachments": 0
+    },
+    {
+     "name": "Category Promotions",
+     "items": 1,
+     "attachments": 0
+    },
+    {
+     "name": "Category Updates",
+     "items": 105,
+     "attachments": 0
+    },
+    {
+     "name": "Important",
+     "items": 24,
+     "attachments": 0
+    },
+    {
+     "name": "Inbox",
+     "items": 107,
+     "attachments": 0
+    }
+   ]
+  },
+  {
+   "file": "large/gmail-takeout-16b.pst",
+   "size": 16524288,
+   "sha256": "e77d83f75085e91091ff3bc4f610aab735968dd443b1e9cc4f5ca769c0b99dc4",
+   "encoding": "permute",
+   "total_items": 256,
+   "total_attachments": 0,
+   "libpff_unreadable": 0,
+   "folders_with_items": [
+    {
+     "name": "Category Personal",
+     "items": 2,
+     "attachments": 0
+    },
+    {
+     "name": "Category Promotions",
+     "items": 7,
+     "attachments": 0
+    },
+    {
+     "name": "Category Updates",
+     "items": 107,
+     "attachments": 0
+    },
+    {
+     "name": "Important",
+     "items": 24,
+     "attachments": 0
+    },
+    {
+     "name": "Inbox",
+     "items": 116,
+     "attachments": 0
+    }
+   ]
+  },
+  {
    "file": "large/gmail-takeout-56.pst",
    "size": 56140800,
    "sha256": "5b4efe643b271ad20f2a6525251ec1f59ca59c8a03d71832beacda2ac8bda296",
@@ -328,6 +410,27 @@
      "name": "Sync Issues",
      "items": 1,
      "attachments": 0
+    },
+    {
+     "name": "United States holidays",
+     "items": 160,
+     "attachments": 0
+    }
+   ]
+  },
+  {
+   "file": "large/outlook-com-c.ost",
+   "size": 16818176,
+   "sha256": "c914f1f9eea55da0eb3884d063acf18a109fcb34cdd7dda623770f117ff63918",
+   "encoding": "none",
+   "total_items": 162,
+   "total_attachments": 12,
+   "libpff_unreadable": 0,
+   "folders_with_items": [
+    {
+     "name": "Inbox",
+     "items": 2,
+     "attachments": 12
     },
     {
      "name": "United States holidays",

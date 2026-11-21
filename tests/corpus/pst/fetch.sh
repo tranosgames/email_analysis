@@ -24,3 +24,6 @@ fetch example-2013.ost      "$JL/src/test/resources/example-2013.ost"           
 fetch outlook-com-a.ost     "$PE/src/__tests__/testdata/mtnman1965%40outlook.com.ost"     b884f6313e3507aaa38c1a70fecf2d9e4689923065a3324b61d4ae12887c862d
 fetch outlook-com-b.ost     "$PE/src/__tests__/testdata/pstextractortest%40outlook.com.ost" daacd8d441428634e103b7c1e37fe1e5909256cc917551667049b5e84dfcf5f0
 fetch gmail-takeout-56.pst  "$AM/Cloud/GoogleTakeout/PST/digitalforensicstestdata%40gmail.com/All_mail_Including_Spam_and_Trash_20241106_convertedWithAid4MailTrial.pst" 5b4efe643b271ad20f2a6525251ec1f59ca59c8a03d71832beacda2ac8bda296
+fetch outlook-com-c.ost     "$PE/example/testdata/pstextractortestpdf%40outlook.com.ost" c914f1f9eea55da0eb3884d063acf18a109fcb34cdd7dda623770f117ff63918
+fetch gmail-takeout-16a.pst "$AM/Cloud/GoogleTakeout/PST/digitalforensicstestdata%40gmail.com/All_mail_Including_Spam_and_Trash_20241102_convertedWithAid4MailTrial.pst" 252b7d53a93330a7b72ff8ad66d9ddb7845613cf4696093909925055646a14bd
+fetch gmail-takeout-16b.pst "$AM/Cloud/GoogleTakeout/PST/digitalforensicstestdata%40gmail.com/All_mail_Including_Spam_and_Trash_20241102_convertedWithAid4MailTrial-2.pst" e77d83f75085e91091ff3bc4f610aab735968dd443b1e9cc4f5ca769c0b99dc4
