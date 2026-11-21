@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "MailForensics",
+  "productName": "Email Analysis",
   "version": "0.1.0",
   "identifier": "com.pubtranos.mailforensics",
   "build": {
@@ -11,7 +11,14 @@
   },
   "app": {
     "windows": [
-      { "title": "MailForensics", "width": 1360, "height": 860, "minWidth": 900, "minHeight": 560, "dragDropEnabled": true }
+      {
+        "title": "Email Analysis",
+        "width": 1360,
+        "height": 860,
+        "minWidth": 900,
+        "minHeight": 560,
+        "dragDropEnabled": true
+      }
     ],
     "security": {
       "csp": {
@@ -32,10 +39,52 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/icon.png"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
     "fileAssociations": [
-      { "ext": ["eml"], "mimeType": "message/rfc822", "description": "Courriel (EML)", "role": "Viewer" },
-      { "ext": ["msg"], "mimeType": "application/vnd.ms-outlook", "description": "Message Outlook (MSG)", "role": "Viewer" }
-    ]
+      {
+        "ext": [
+          "eml"
+        ],
+        "mimeType": "message/rfc822",
+        "description": "Email message (EML)",
+        "role": "Viewer"
+      },
+      {
+        "ext": [
+          "msg"
+        ],
+        "mimeType": "application/vnd.ms-outlook",
+        "description": "Outlook message (MSG)",
+        "role": "Viewer"
+      },
+      {
+        "ext": [
+          "pst"
+        ],
+        "mimeType": "application/vnd.ms-outlook-pst",
+        "description": "Outlook data file (PST)",
+        "role": "Viewer"
+      },
+      {
+        "ext": [
+          "ost"
+        ],
+        "mimeType": "application/vnd.ms-outlook-ost",
+        "description": "Outlook offline data file (OST)",
+        "role": "Viewer"
+      }
+    ],
+    "publisher": "tranosgames",
+    "homepage": "https://github.com/tranosgames/email_analysis",
+    "category": "Utility",
+    "copyright": "Apache-2.0",
+    "shortDescription": "Forensic email analysis (.eml, .msg, .pst, .ost)",
+    "longDescription": "Offline, read-only forensic analysis of suspicious emails: verdict, routing, SPF/DKIM/DMARC, links, attachments, PGP/S-MIME, and Outlook PST/OST mailboxes."
   }
 }

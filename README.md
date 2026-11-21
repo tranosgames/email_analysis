@@ -1,230 +1,248 @@
 # Email Analysis
 
-**Déposez un courriel suspect. En une seconde : un verdict, les preuves qui le fondent, et tout ce qu'il faut pour agir.**
+**Drop in a suspicious email. One second later: a verdict, the evidence behind it, and everything you need to act.**
 
-Email Analysis est un outil d'investigation forensic pour les fichiers **`.eml`** et **`.msg`** (Outlook),
-et pour les boîtes Outlook **`.pst`** / **`.ost`** dans l'application de bureau.
-Il lit le message comme un analyste le ferait — d'où il vient vraiment, qui l'a signé, où mènent
-ses liens, ce que cachent ses pièces jointes — et le restitue dans une interface claire, un rapport
-imprimable et des indicateurs prêts à bloquer.
+Email Analysis is a forensic investigation tool for **`.eml`** and **`.msg`** (Outlook) files,
+and for whole Outlook mailboxes (**`.pst`** / **`.ost`**) in the desktop app.
+It reads a message the way an analyst would — where it really came from, who signed it, where its
+links lead, what its attachments hide — and presents it in a clear interface, a printable report
+and ready-to-block indicators.
 
-Tout se passe **sur votre poste**. Aucun fichier n'est envoyé, aucune requête n'est émise, et la
-preuve n'est jamais modifiée.
+Everything happens **on your machine**. No file is uploaded, no request is made, and the evidence
+is never modified.
 
-![Un courriel de phishing analysé : verdict, constats classés par gravité, acheminement et empreintes de la preuve](docs/apercu.png)
+![A phishing email analysed: verdict, findings ranked by severity, routing and evidence hashes](docs/apercu.png)
 
-> **Essayer tout de suite** : la version web tourne entièrement dans le navigateur —
+> **Try it now**: the web version runs entirely in your browser —
 > [tranosgames.github.io/email_analysis](https://tranosgames.github.io/email_analysis/).
-> Les fichiers que vous y déposez ne quittent pas votre machine.
+> Files you drop there never leave your computer.
+>
+> The interface is currently in French.
 
 ---
 
-## Ce qu'il voit pour vous
+## What it sees for you
 
-### Un verdict, et pourquoi
+### A verdict, and why
 
-Chaque message reçoit un verdict — **Malveillant**, **À vérifier** ou **Légitime** — affiché en tête
-et en pastille dans la liste, avec les raisons qui le fondent. Le verdict est prudent par construction :
+Every message gets a verdict — **Malicious**, **Needs review** or **Legitimate** — shown at the top
+and as a badge in the list, with the reasons behind it. The verdict is cautious by design:
 
-- « Malveillant » exige un **signe de tromperie délibérée** (domaine sosie, exécutable déguisé, lien
-  masqué…) : un expéditeur simplement mal configuré n'est pas accusé à tort ;
-- « Légitime » exige une **preuve d'authenticité** (DMARC, SPF + DKIM, ou une signature PGP / S/MIME
-  vérifiée) : sans elle, le message reste « À vérifier ».
+- "Malicious" requires a **sign of deliberate deception** (look-alike domain, disguised executable,
+  masked link…): a sender that is merely misconfigured is not wrongly accused;
+- "Legitimate" requires **proof of authenticity** (DMARC, SPF + DKIM, or a verified PGP / S/MIME
+  signature): without it, the message stays "Needs review".
 
-### Qui a vraiment envoyé ce message
+### Who really sent this message
 
-- **Acheminement** : IP et nom de la machine d'envoi, IP du client de l'expéditeur, serveur qui a
-  remis le message, chemin complet relais par relais avec les délais — lus dans les en-têtes, sans
-  aucune requête DNS.
-- **SPF, DKIM, DMARC** : le verdict qui fait foi, et l'empreinte du corps DKIM **recalculée** : un
-  message retouché après signature est démasqué.
-- **Signatures PGP et S/MIME** vérifiées sur les octets exacts : valide, falsifiée, clé inconnue,
-  certificat expiré, signataire différent de l'expéditeur. Importez vos clés et autorités une fois,
-  elles restent sur le poste.
-- **Usurpation** : domaine sosie d'une marque, Reply-To ou Return-Path d'un autre domaine, nom
-  affiché trompeur, date dans le futur, relais qui remontent le temps.
+- **Routing**: IP and host name of the sending machine, the sender's client IP, the server that
+  delivered the message, the full hop-by-hop path with delays — read from the headers, without a
+  single DNS query.
+- **SPF, DKIM, DMARC**: the authoritative result, and the DKIM body hash **recomputed**: a message
+  altered after signing is exposed.
+- **PGP and S/MIME signatures** verified over the exact bytes: valid, forged, unknown key, expired
+  certificate, signer different from the sender. Import your keys and certificate authorities once;
+  they stay on your machine.
+- **Spoofing**: look-alike brand domains, Reply-To or Return-Path from another domain, misleading
+  display names, dates in the future, relays that travel back in time.
 
-### Où mènent les liens
+### Where the links lead
 
-- Toutes les URL du message, dédoublonnées et localisées (en-tête, texte, `href`, CSS), **jamais
-  cliquables**, copiables brutes ou défangées.
-- **Liens trompeurs** : texte affiché ≠ destination, `user@hôte`, adresse IP brute, punycode et
-  alphabets mélangés (`pаypal` avec un « а » cyrillique est démasqué).
-- **Redirections décodées sans cliquer** : Safe Links, Proofpoint, Google, Bing, Facebook, YouTube,
-  LinkedIn… La vraie destination est extraite et analysée à son tour.
-- **QR codes** : les images du message sont scannées, l'URL cachée dans un QR code (« quishing »)
-  rejoint la liste.
+- Every URL in the message, deduplicated and located (header, text, `href`, CSS), **never
+  clickable**, copyable raw or defanged.
+- **Deceptive links**: displayed text ≠ destination, `user@host`, raw IP addresses, punycode and
+  mixed scripts (`pаypal` with a Cyrillic "а" is caught).
+- **Redirects decoded without clicking**: Safe Links, Proofpoint, Google, Bing, Facebook, YouTube,
+  LinkedIn… The real destination is extracted and analysed in turn.
+- **QR codes**: images in the message are scanned, and a URL hidden in a QR code ("quishing") joins
+  the list.
 
-### Ce que cachent les pièces jointes
+### What attachments hide
 
-- **Type réel** reconnu au contenu (exécutable, raccourci, ISO, archive, document Office…) et comparé
-  à l'extension : double extension, caractères d'inversion Unicode, macros, archives chiffrées.
-- **Pages HTML jointes** lues sans être exécutées : faux formulaire de connexion et adresse où partent
-  les identifiants, exfiltration (bot Telegram, webhooks…), code obfusqué décodé, redirection
-  automatique, adresse de la victime pré-remplie.
-- Empreintes SHA-256 et MD5, messages joints ouverts en cascade, et **téléchargement sous
-  confirmation**, identique octet pour octet.
+- **Real type** detected from the content (executable, shortcut, ISO, archive, Office document…) and
+  compared with the extension: double extensions, Unicode right-to-left tricks, macros, encrypted
+  archives.
+- **Attached HTML pages** read without being executed: fake login forms and where the credentials
+  are sent, exfiltration (Telegram bots, webhooks…), decoded obfuscated code, automatic redirects,
+  pre-filled victim address.
+- SHA-256 and MD5 hashes, attached messages opened recursively, and **download after
+  confirmation**, byte-for-byte identical.
 
-### Une lecture sans risque
+### Safe reading
 
-- Le corps HTML est affiché **neutralisé** : scripts retirés, pixels de suivi et images distantes
-  bloqués. Chaque ressource bloquée est listée et localisée, dans le rendu comme dans la source.
-- Les messages Outlook dont la mise en forme n'existe qu'en RTF retrouvent leur HTML d'origine.
-- Tous les en-têtes bruts d'un clic (touche `H`), thème clair ou sombre, plein écran.
+- The HTML body is shown **neutralised**: scripts removed, tracking pixels and remote images
+  blocked. Every blocked resource is listed and located, both in the rendering and in the source.
+- Outlook messages whose formatting only exists as RTF get their original HTML back.
+- All raw headers in one click (`H` key), light or dark theme, full screen.
 
-### Les boîtes Outlook entières
+### Whole Outlook mailboxes
 
-Déposez un `.pst` ou un `.ost` : l'arborescence s'affiche aussitôt, avec le nombre d'éléments de
-chaque dossier. Rien d'autre n'est lu. Ouvrez un dossier : ses lignes viennent de la table du
-dossier, sans ouvrir un seul message. **Seul le message sur lequel vous cliquez est lu et analysé**,
-avec exactement la même analyse qu'un `.eml` — verdict, acheminement, liens, pièces jointes,
-signatures — et un fil d'Ariane qui donne sa provenance (boîte › dossier › élément).
+Drop a `.pst` or `.ost`: the folder tree appears immediately, with the number of items in each
+folder. Nothing else is read. Open a folder: its rows come from the folder's table, without opening
+a single message. **Only the message you click is read and analysed**, with exactly the same
+analysis as an `.eml` — verdict, routing, links, attachments, signatures — and a breadcrumb showing
+where it came from (mailbox › folder › item).
 
-L'empreinte SHA-256 / MD5 de la boîte se calcule en arrière-plan par petits pas ; elle est reportée
-sur chaque rapport. La boîte est ouverte en lecture seule et jamais chargée en entière en mémoire :
-une boîte de plusieurs gigaoctets s'ouvre en quelques millisecondes. PST Unicode et ANSI, OST
-Outlook 2013 et plus récents. Les contacts, rendez-vous et tâches s'affichent sans verdict.
+The mailbox's SHA-256 / MD5 hash is computed in the background in small steps and carried into
+every report. The mailbox is opened read-only and never loaded into memory as a whole: a
+multi-gigabyte mailbox opens in milliseconds. Unicode and ANSI PST, Outlook 2013+ OST. Contacts,
+appointments and tasks are shown without a verdict.
 
-![Une boîte PST : arborescence, liste du dossier et message ouvert avec sa provenance](docs/apercu-pst.png)
+![A PST mailbox: folder tree, folder list and an opened message with its provenance](docs/apercu-pst.png)
 
-### Restituer
+### Reporting
 
-- **Indicateurs** (adresses, domaines, IP publiques, URL, empreintes) dédoublonnés et défangés :
-  copie en un clic, export CSV ou JSON, pour un message ou pour tous.
-- **Rapport** autonome : HTML imprimable en PDF (sans aucune ressource externe) ou JSON versionné.
-  Preuve et empreintes, verdict, constats, signatures, authentification, acheminement, pièces
-  jointes, URL et indicateurs, annexe des en-têtes.
-
-![Thème sombre : pièce jointe HTML piégée et lien Safe Links décodé](docs/apercu-sombre.png)
+- **Indicators** (addresses, domains, public IPs, URLs, hashes), deduplicated and defanged:
+  one-click copy, CSV or JSON export, for one message or for all of them.
+- **Self-contained report**: HTML that prints to PDF (no external resources at all) or versioned
+  JSON. Evidence and hashes, verdict, findings, signatures, authentication, routing, attachments,
+  URLs and indicators, header appendix.
 
 ---
 
-## Les principes
+## Principles
 
 | | |
 |---|---|
-| **La preuve est intouchable** | Les fichiers sont ouverts en lecture seule ; leur SHA-256 et MD5 sont calculés à l'ouverture et figurent dans chaque rapport. L'outil refuse d'écrire dans le dossier d'une preuve. |
-| **Rien ne sort** | Aucune requête réseau, aucune résolution DNS, aucune réputation en ligne. Les seuls liens externes (vérification d'une clé PGP) ne s'ouvrent que sur clic confirmé. |
-| **Le contenu est hostile** | HTML neutralisé, ressources distantes bloquées, URL non cliquables, pièces jointes jamais exécutées, mémoire bornée sur les fichiers piégés. |
-| **Vérifiable** | Le même moteur sert la ligne de commande, l'application et la page web ; chaque version est testée sur un corpus de messages réels et piégés. |
+| **Evidence is untouchable** | Files are opened read-only; their SHA-256 and MD5 are computed on opening and appear in every report. The tool refuses to write into an evidence folder. |
+| **Nothing leaves** | No network request, no DNS resolution, no online reputation lookup. The only external links (checking a PGP key) open on a confirmed click only. |
+| **Content is hostile** | Neutralised HTML, blocked remote resources, non-clickable URLs, attachments never executed, bounded memory on booby-trapped files. |
+| **Verifiable** | The same engine powers the command line, the app and the web page; every version is tested against a corpus of real and booby-trapped messages. |
 
 ---
 
-## Trois façons de l'utiliser
+## Three ways to use it
 
-### Dans le navigateur
+### In the browser
 
-Aucune installation : ouvrez la page, déposez vos fichiers. Le moteur est compilé en WebAssembly et
-s'exécute dans un processus isolé de la page ; une politique de sécurité stricte interdit toute
-connexion après le chargement. Une fois ouverte, la page continue de fonctionner hors-ligne.
+No installation: open the page and drop your files. The engine is compiled to WebAssembly and runs
+in a worker isolated from the page; a strict security policy forbids any connection after loading.
+Once open, the page keeps working offline. Mailboxes (`.pst` / `.ost`) currently open in the
+desktop app only.
 
-### Application de bureau
+### Desktop app
 
-Windows, macOS et Linux. Glisser-déposer de fichiers ou de dossiers entiers, ouverture directe
-depuis l'explorateur.
+Windows, macOS and Linux. Drag and drop files or whole folders, open directly from the file
+manager. Installers are attached to each [release](https://github.com/tranosgames/email_analysis/releases).
 
 ```console
 cd apps/desktop
 npm install
-npm run tauri dev       # lancer en développement
-npm run tauri build     # produire les installeurs (.msi, .dmg, .deb, .AppImage)
+npm run tauri dev       # run in development
+npm run tauri build     # build installers (.msi, .exe, .dmg, .deb, .rpm, .AppImage)
 ```
 
-Prérequis : Rust stable et Node.js 20+. Sous Linux : `libwebkit2gtk-4.1-dev libsoup-3.0-dev librsvg2-dev`.
+Requirements: stable Rust and Node.js 20+. On Linux: `libwebkit2gtk-4.1-dev libsoup-3.0-dev librsvg2-dev`.
 
-### Ligne de commande
+> The installers are not code-signed yet: Windows SmartScreen and macOS Gatekeeper will warn on
+> first launch (on macOS: right-click › Open).
 
-Pour l'automatisation, le traitement par lots et la contre-vérification. Le binaire `mf` est produit dans `target/release/`.
+### Command line
+
+For automation, batch processing and cross-checking. The `mf` binary is built into `target/release/`.
 
 ```console
 cargo build --release
-mf show suspect.eml --headers                    # résumé, en-têtes, fichiers, URL
-mf findings *.eml *.msg                          # verdict, authentification, constats
-mf urls suspect.msg --defang                     # URL défangées
-mf attachments suspect.msg                       # arborescence des pièces et messages joints
-mf extract suspect.eml --index 1 --out ./pj      # extraire une pièce jointe
-mf iocs *.eml --format csv --defang > iocs.csv   # indicateurs de tout un lot
-mf report suspect.eml --out rapport.html         # rapport (ou --format json)
-mf show signe.eml --keys ./cles/                 # vérifier PGP / S/MIME avec vos clés
+mf show suspect.eml --headers                    # summary, headers, files, URLs
+mf findings *.eml *.msg                          # verdict, authentication, findings
+mf urls suspect.msg --defang                     # defanged URLs
+mf attachments suspect.msg                       # tree of attachments and attached messages
+mf extract suspect.eml --index 1 --out ./att     # extract an attachment
+mf iocs *.eml --format csv --defang > iocs.csv   # indicators for a whole batch
+mf report suspect.eml --out report.html          # report (or --format json)
+mf show signed.eml --keys ./keys/                # verify PGP / S/MIME with your keys
 ```
 
-Les boîtes Outlook ont leurs propres commandes, qui ne lisent que ce qu'on leur demande :
+Mailboxes have their own commands, which only read what you ask for:
 
 ```console
-mf pst info boite.pst                            # format, dossiers, éléments, empreinte
-mf pst tree boite.pst                            # arborescence avec compteurs
-mf pst ls boite.pst --folder "Inbox"             # lignes d'un dossier (table du dossier)
-mf pst show boite.pst --id 2097220 --headers     # lire et analyser un seul élément
-mf pst report boite.pst --id 2097220 --out r.html
+mf pst info mailbox.pst                          # format, folders, items, hash
+mf pst tree mailbox.pst                          # folder tree with counts
+mf pst ls mailbox.pst --folder "Inbox"           # rows of a folder (from the folder table)
+mf pst show mailbox.pst --id 2097220 --headers   # read and analyse a single item
+mf pst report mailbox.pst --id 2097220 --out r.html
 ```
 
-Toutes les commandes acceptent `--json`.
+Every command accepts `--json`.
 
-### Raccourcis clavier
+### Keyboard shortcuts
 
-| Touche | Action |
+| Key | Action |
 |---|---|
-| `↑` `↓` | message précédent / suivant |
-| `H` | afficher / masquer les en-têtes |
-| `P` | épingler le message |
-| `Échap` | revenir au message parent |
+| `↑` `↓` | previous / next message |
+| `H` | show / hide headers |
+| `P` | pin the message |
+| `Esc` | back to the parent message |
 
 ---
 
-## Sous le capot
+## Under the hood
 
-Un moteur unique en **Rust**, sans aucun code `unsafe`, partagé par les trois interfaces.
+A single **Rust** engine, with no `unsafe` code, shared by all three interfaces.
 
 ```text
 crates/
-├── mf-core       modèle de données, lecture des preuves, empreintes
-├── mf-eml        format MIME (.eml)
-├── mf-msg        format Outlook (.msg) : conteneur OLE, propriétés MAPI, RTF compressé
-├── mf-analysis   acheminement, SPF/DKIM/DMARC, liens, pièces jointes, QR codes, constats, verdict
-├── mf-sig        signatures PGP et S/MIME
-├── mf-pst        boîtes .pst / .ost : lecture paginée, arborescence, éléments à la demande
-├── mf-report     rapports HTML et JSON, export des indicateurs
-├── mf-engine     point d'entrée commun
-├── mf-cli        ligne de commande « mf »
-└── mf-wasm       moteur compilé pour le navigateur
-apps/desktop/     interface TypeScript commune : application Tauri 2 et version web
-vendor/           lecteur PST de Microsoft (MIT), audité et passé en lecture seule
-tests/corpus/     messages de référence, réels et synthétiques (phishing, quishing, signés…)
-specs/            spécifications, plan et tâches du projet
+├── mf-core       data model, evidence reading, hashes
+├── mf-eml        MIME format (.eml)
+├── mf-msg        Outlook format (.msg): OLE container, MAPI properties, compressed RTF
+├── mf-pst        .pst / .ost mailboxes: paged reading, folder tree, items on demand
+├── mf-analysis   routing, SPF/DKIM/DMARC, links, attachments, QR codes, findings, verdict
+├── mf-sig        PGP and S/MIME signatures
+├── mf-report     HTML and JSON reports, indicator export
+├── mf-engine     common entry point
+├── mf-cli        the "mf" command line
+└── mf-wasm       engine compiled for the browser
+apps/desktop/     shared TypeScript interface: Tauri 2 app and web version
+vendor/           Microsoft's PST reader (MIT), audited and made read-only
+tests/corpus/     reference messages, real and synthetic (phishing, quishing, signed…)
+specs/            project specifications, plans and tasks
 ```
 
-### Développer
+### Development
 
 ```console
-cargo test --workspace --exclude mailforensics-desktop   # tests unitaires et corpus
+cargo test --workspace --exclude mailforensics-desktop   # unit and corpus tests
 cargo clippy --workspace --all-targets -- -D warnings
 
 cd apps/desktop
-npm run dev:web      # version web sur http://localhost:5173
-npm run build:web    # page statique dans dist-web/
-npm run test:web     # tests de bout en bout dans un vrai navigateur
-npm run test:box     # interface des boîtes PST, avec un pont simulé
+npm run dev:web      # web version on http://localhost:5173
+npm run build:web    # static page in dist-web/
+npm run test:web     # end-to-end tests in a real browser
+npm run test:box     # PST mailbox interface, with a simulated backend
 ```
 
-La version web demande en plus la cible `wasm32-unknown-unknown` et `wasm-bindgen-cli` 0.2.129.
-Chaque poussée sur `main` publie la page web.
+The web version also needs the `wasm32-unknown-unknown` target and `wasm-bindgen-cli` 0.2.129.
+Every push to `main` publishes the web page.
 
-Le projet est piloté par ses spécifications : chaque fonctionnalité part d'une exigence numérotée
-dans `specs/`, puis d'un plan et de tâches cochées au fil de l'implémentation.
+### Releases
+
+Pushing a version tag builds the desktop installers for Windows, macOS (Apple Silicon and Intel)
+and Linux, and attaches them to a draft GitHub release:
+
+```console
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The workflow aligns the app version with the tag, runs the tests, and leaves the release as a
+draft so you can review it before publishing. It can also be started by hand from the Actions tab.
+
+The project is specification-driven: each feature starts from a numbered requirement in `specs/`,
+then a plan and tasks checked off as they are implemented.
 
 ---
 
-## Et ensuite
+## Roadmap
 
-- **Boîtes Outlook, suite** : filtres sur les colonnes des dossiers, ouverture dans la version web,
-  export des éléments analysés.
-- **Listes de l'équipe** : domaines légitimes de l'organisation, listes de blocage importées,
-  règles maison prises en compte par le verdict.
-- Contenu des archives et des documents Office.
+- **Mailboxes, continued**: filters on folder columns, opening in the web version, export of
+  analysed items.
+- **Team lists**: the organisation's legitimate domains, imported block lists, in-house rules taken
+  into account by the verdict.
+- Contents of archives and Office documents.
 
 ---
 
-## Licence
+## License
 
-Apache-2.0 — voir [`LICENSE`](LICENSE). Une partie des messages `.msg` du corpus de test provient de
-projets sous licence MIT, crédités dans [`tests/corpus/README.md`](tests/corpus/README.md).
+Apache-2.0 — see [`LICENSE`](LICENSE). Some of the `.msg` messages in the test corpus come from
+MIT-licensed projects, credited in [`tests/corpus/README.md`](tests/corpus/README.md).

@@ -1,0 +1,123 @@
+# Desktop release: builds the Tauri installers for Windows, macOS and Linux and attaches them to a
+# draft GitHub release. Triggered by pushing a version tag (v0.2.0, v1.0.0-beta.1…) or by hand.
+name: Desktop release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create or update (e.g. v0.2.0)"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  test:
+    name: Tests
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the tag is a valid version
+        run: |
+          echo "$RELEASE_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' \
+            || { echo "::error::Tag '$RELEASE_TAG' is not of the form v1.2.3 or v1.2.3-beta.1"; exit 1; }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Engine tests
+        run: cargo test --workspace --exclude mailforensics-desktop
+
+  build:
+    name: Build (${{ matrix.name }})
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - name: macOS Apple Silicon
+            os: macos-latest
+            target: aarch64-apple-darwin
+          - name: macOS Intel
+            os: macos-latest
+            target: x86_64-apple-darwin
+          - name: Linux x64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libsoup-3.0-dev librsvg2-dev \
+            libayatana-appindicator3-dev patchelf rpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Set the app version from the tag
+        shell: bash
+        working-directory: apps/desktop
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          node -e '
+            const fs = require("fs");
+            const p = "src-tauri/tauri.conf.json";
+            const c = JSON.parse(fs.readFileSync(p, "utf8"));
+            c.version = process.argv[1];
+            fs.writeFileSync(p, JSON.stringify(c, null, 2) + "\n");
+          ' "$VERSION"
+          echo "Building version $VERSION"
+
+      - name: Install front-end dependencies
+        working-directory: apps/desktop
+        run: npm ci
+
+      - name: Build installers and upload them to the release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/desktop
+          tagName: ${{ env.RELEASE_TAG }}
+          releaseName: Email Analysis ${{ env.RELEASE_TAG }}
+          releaseBody: |
+            Desktop installers for Email Analysis ${{ env.RELEASE_TAG }}.
+
+            | System | File |
+            |---|---|
+            | Windows | `.msi` or `-setup.exe` |
+            | macOS (Apple Silicon) | `aarch64.dmg` |
+            | macOS (Intel) | `x64.dmg` |
+            | Linux | `.AppImage`, `.deb` or `.rpm` |
+
+            The installers are not code-signed yet: Windows SmartScreen and macOS Gatekeeper
+            will warn on first launch (on macOS: right-click › Open).
+          releaseDraft: true
+          prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
+          args: --target ${{ matrix.target }}
