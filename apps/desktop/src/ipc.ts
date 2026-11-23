@@ -363,6 +363,8 @@ export interface Provenance {
   folder_path: string[];
   node_id: number;
   embedded_path: number[];
+  /** Empreinte du contenu de l'élément (propriétés triées puis pièces jointes). */
+  item_sha256?: string;
 }
 
 export interface BoxHash {
@@ -862,6 +864,56 @@ export async function boxSaveAttachment(boxId: number, id: number, path: number[
   if (!dest) return null;
   await invoke<string>("box_save_attachment", { boxId, id, path, index: att.index, dest });
   return dest;
+}
+
+/** Manifeste d'un export (FR-008) : fichiers produits, provenance et empreintes. */
+export interface ExportManifest {
+  tool: string;
+  version: string;
+  generated_utc: string;
+  store: { name: string; size: number; sha256: string; md5: string; verified: boolean };
+  format: "msg" | "eml";
+  items: {
+    id: number;
+    folder_path: string[];
+    subject: string | null;
+    file: string;
+    size: number;
+    sha256: string;
+    md5: string;
+    item_sha256: string;
+    named_properties_skipped: number;
+    reconstructed: boolean;
+  }[];
+  errors: { id: number; reason: string }[];
+  notes: string[];
+}
+
+/**
+ * Exporte des éléments : sur le bureau dans un dossier choisi (vide, hors de celui de la preuve),
+ * dans le navigateur en une archive ZIP téléchargée. L'empreinte de la boîte est revérifiée avant.
+ * Retourne le manifeste et l'emplacement, ou null si l'analyste a annulé le choix du dossier.
+ */
+export async function boxExport(
+  boxId: number,
+  ids: number[],
+  format: "msg" | "eml",
+  boxName: string,
+): Promise<{ manifest: ExportManifest; where: string } | null> {
+  const stamp = nowUtc().replace(" ", "_").replace(/:/g, "");
+  const base = `export_${boxName.replace(/\.[^.]+$/, "").replace(/[^\p{L}\p{N}_-]+/gu, "_").slice(0, 40)}_${format}_${stamp}`;
+  if (!inTauri) {
+    const r = await boxAsk({ kind: "box-export", box: boxId, ids, format, generated: nowUtc() });
+    const where = downloadBytes(r.data as ArrayBuffer, `${base}.zip`);
+    return { manifest: r.json as ExportManifest, where };
+  }
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const parent = await open({ directory: true, title: "Dossier où créer l'export (hors du dossier de la preuve)" });
+  if (!parent || Array.isArray(parent)) return null;
+  // Un sous-dossier neuf, nommé d'après la boîte, le format et l'heure : jamais de mélange.
+  const dest = `${parent}${parent.includes("\\") ? "\\" : "/"}${base}`;
+  const manifest = await invoke<ExportManifest>("box_export", { boxId, ids, format, generated: nowUtc(), dest });
+  return { manifest, where: dest };
 }
 
 /** Progression du calcul d'empreinte des boîtes. */

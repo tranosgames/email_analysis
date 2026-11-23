@@ -142,14 +142,14 @@ corpus : `tests/corpus/pst/`. Numérotation propre à la feature, préfixe `P`.
 
 ### Tests
 
-- [ ] P037 [P] [US3] `crates/mf-pst/tests/export.rs` : aller-retour de 10 éléments d'Enron en `.msg` rouverts par `mf-msg` (champs clés, en-têtes de transport, empreintes des pièces jointes identiques — SC-006) ; manifeste complet ; empreinte de la boîte revérifiée
-- [ ] P038 [P] [US3] Export refusé dans le dossier de la preuve, dans un dossier non vide, et si l'empreinte de la boîte a changé
+- [x] P037 [P] [US3] `crates/mf-pst/tests/export.rs` : aller-retour de 10 éléments d'Enron en `.msg` rouverts par `mf-msg` (champs clés, en-têtes de transport, empreintes des pièces jointes identiques — SC-006) ; manifeste complet ; empreinte de la boîte revérifiée — *`crates/mf-engine/tests/export.rs` (l'export orchestre session et manifeste, d'où le crate) : support (17), Enron (10), OST (2) en .msg et .eml, 20 rendez-vous en .msg ; relus par `mf-msg` et par `msg_parser` ; en-têtes de transport, destinataires, corps, pièces jointes et empreintes identiques ; propriétés nommées conservées ; export reproductible. Contrôle supplémentaire hors CI avec `extract-msg` (Python) : 25/25*
+- [x] P038 [P] [US3] Export refusé dans le dossier de la preuve, dans un dossier non vide, et si l'empreinte de la boîte a changé — *même fichier, `refusals` : dossier de la preuve et ses sous-dossiers, dossier non vide, boîte modifiée après l'ouverture (rien n'est écrit) ; CLI : `crates/mf-cli/tests/pst.rs`*
 
 ### Implementation
 
-- [ ] P039 [US3] `crates/mf-pst/src/export.rs` : écriture `.msg` (fichier composé `cfb` : propriétés, destinataires, pièces jointes, messages embarqués), `.eml` reconstruit avec `X-MailForensics-Reconstructed: pst`, manifeste JSON et CSV
-- [ ] P040 [US3] CLI `mf pst export` ; Tauri `box_export` (destination choisie) ; web : ZIP téléchargé
-- [ ] P041 [US3] Interface : sélection multiple dans la liste, « Exporter la sélection » et « Exporter le filtre »
+- [x] P039 [US3] `crates/mf-pst/src/export.rs` : écriture `.msg` (fichier composé `cfb` : propriétés, destinataires, pièces jointes, messages embarqués), `.eml` reconstruit avec `X-MailForensics-Reconstructed: pst`, manifeste JSON et CSV — *`crates/mf-pst/src/msg_writer.rs` (.msg v3 comme Outlook, table des noms de la boîte copiée) et `crates/mf-engine/src/export.rs` (.eml reconstruit, manifeste JSON/CSV, ZIP) ; empreinte du contenu de l'élément (`Provenance.item_sha256`), aussi affichée dans le scellé*
+- [x] P040 [US3] CLI `mf pst export` ; Tauri `box_export` (destination choisie) ; web : ZIP téléchargé — *`mf pst export --id|filtre --format --out` ; Tauri `box_export` asynchrone (sous-dossier neuf dans le dossier choisi) ; web : empreinte recalculée en flux puis ZIP téléchargé*
+- [x] P041 [US3] Interface : sélection multiple dans la liste, « Exporter la sélection » et « Exporter le filtre » — *cases à cocher (Maj+clic pour une plage), « Tout », format .msg/.eml, « Exporter la sélection » ou, sans sélection, le dossier ou les résultats du filtre ; e2e web : ZIP contrôlé avec la CLI*
 
 ---
 

@@ -200,6 +200,14 @@ function seal(view: MessageView): HTMLElement {
     view.evidence.sha256 ? h("dd", {}, view.evidence.sha256) : h("dd", { class: "seal-pending" }, "calcul en cours…"),
     h("dt", {}, "MD5"),
     view.evidence.md5 ? h("dd", {}, view.evidence.md5) : h("dd", { class: "seal-pending" }, "calcul en cours…"),
+    // Élément d'une boîte : un PST ne garde pas le fichier d'origine du message ; empreinte du
+    // contenu de l'élément (propriétés et pièces jointes), stable et recalculable.
+    ...(view.message.provenance?.item_sha256
+      ? [
+          h("dt", { class: "seal-item", title: "Empreinte du contenu de l'élément dans la boîte : SHA-256 de ses propriétés Outlook triées puis de ses pièces jointes. Le fichier d'origine du message n'existe plus dans un PST ; cette empreinte est stable et recalculable par Email Analysis." }, "Élément"),
+          h("dd", { class: "seal-item" }, view.message.provenance.item_sha256),
+        ]
+      : []),
   );
 }
 

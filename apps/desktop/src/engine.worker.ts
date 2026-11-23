@@ -5,6 +5,7 @@
 import init, {
   analyze,
   box_close,
+  box_export,
   box_extract,
   box_filter,
   box_iocs,
@@ -15,6 +16,7 @@ import init, {
   box_open,
   box_report,
   engine_memory_bytes,
+  FreshHasher,
   engine_version, extract_attachment, import_key, iocs_export, list_keys, remove_key, report, safe_file_name } from "./wasm/mf_wasm.js";
 import wasmUrl from "./wasm/mf_wasm_bg.wasm?url";
 
@@ -36,6 +38,7 @@ type Job =
   | { id: number; kind: "box-iocs"; box: number }
   | { id: number; kind: "box-report"; box: number; item: number; path: number[]; format: string; generated: string }
   | { id: number; kind: "box-extract"; box: number; item: number; path: number[]; index: number; filename: string }
+  | { id: number; kind: "box-export"; box: number; ids: number[]; format: string; generated: string }
   | { id: number; kind: "box-forget" }
   | { id: number; kind: "box-close"; box: number };
 
@@ -58,6 +61,44 @@ function blobReader(file: File) {
 const boxes = new Set<number>();
 /** Fin du calcul d'empreinte en flux, par boîte (un rapport l'attend au lieu de relire le fichier). */
 const hashing = new Map<number, Promise<void>>();
+/** Fichier de chaque boîte, pour la revérification de son empreinte avant un export. */
+const boxFiles = new Map<number, File>();
+
+/**
+ * Empreinte recalculée en flux, dans un tampon réutilisé, indépendamment de la session : sert à
+ * vérifier, juste avant un export, que la boîte n'a pas changé depuis son ouverture.
+ */
+async function freshHash(file: File): Promise<[string, string]> {
+  const CHUNK = 4 * 1024 * 1024;
+  const h = new FreshHasher(file.size);
+  try {
+    let buffer: ArrayBuffer = new ArrayBuffer(CHUNK);
+    const stream = file.stream();
+    let byob: ReadableStreamBYOBReader | null = null;
+    try {
+      byob = stream.getReader({ mode: "byob" });
+    } catch {
+      byob = null;
+    }
+    const reader = byob ?? stream.getReader();
+    let pos = 0;
+    let result: string[] | undefined = file.size === 0 ? (h.feed(0, new Uint8Array(0)) as string[] | undefined) : undefined;
+    while (!result) {
+      const r = byob ? await byob.read(new Uint8Array(buffer, 0, CHUNK)) : await (reader as ReadableStreamDefaultReader<Uint8Array>).read();
+      if (r.done || !r.value) break;
+      const chunk = r.value as Uint8Array;
+      result = h.feed(pos, chunk) as string[] | undefined;
+      if (byob) buffer = chunk.buffer as ArrayBuffer;
+      pos += chunk.byteLength;
+      await yieldToMessages();
+    }
+    await reader.cancel().catch(() => undefined);
+    if (!result) throw new Error("le fichier a changé pendant la revérification de son empreinte");
+    return [result[0], result[1]];
+  } finally {
+    h.free();
+  }
+}
 // Mesure de la mémoire du moteur (tests de performance) : lecture seule, sans effet.
 (self as unknown as { mfEngineMemory: () => number }).mfEngineMemory = () => engine_memory_bytes();
 
@@ -178,6 +219,7 @@ self.onmessage = async (e: MessageEvent<Job>) => {
       const opened = JSON.parse(box_open(job.box, job.name, blobReader(job.file)));
       boxes.add(job.box);
       hashing.set(job.box, hashLoop(job.box, job.file));
+      boxFiles.set(job.box, job.file);
       scope.postMessage({ id: job.id, ok: true, json: opened });
     } else if (job.kind === "box-list") {
       scope.postMessage({ id: job.id, ok: true, json: JSON.parse(box_list(job.box, job.folder)) });
@@ -196,11 +238,26 @@ self.onmessage = async (e: MessageEvent<Job>) => {
       const data = box_extract(job.box, job.item, new Uint32Array(job.path), job.index);
       const buf = data.buffer as ArrayBuffer;
       scope.postMessage({ id: job.id, ok: true, data: buf, name: safe_file_name(job.filename) }, [buf]);
+    } else if (job.kind === "box-export") {
+      // L'empreinte de l'ouverture d'abord, puis une revérification complète en flux.
+      await hashing.get(job.box);
+      const file = boxFiles.get(job.box);
+      if (!file) throw new Error("boîte fermée");
+      const [sha, md5] = await freshHash(file);
+      const r = box_export(job.box, new Uint32Array(job.ids), job.format, job.generated, sha, md5);
+      try {
+        const zip = r.zip();
+        const buf = zip.buffer as ArrayBuffer;
+        scope.postMessage({ id: job.id, ok: true, data: buf, json: JSON.parse(r.manifest()) }, [buf]);
+      } finally {
+        r.free();
+      }
     } else if (job.kind === "box-forget") {
       for (const b of boxes) box_forget(b);
       scope.postMessage({ id: job.id, ok: true });
     } else if (job.kind === "box-close") {
       boxes.delete(job.box);
+      boxFiles.delete(job.box);
       box_close(job.box);
       scope.postMessage({ id: job.id, ok: true });
     } else if (job.kind === "iocs") {

@@ -161,12 +161,46 @@ def check_box(page, path: pathlib.Path, folder_name: str) -> None:
     page.wait_for_selector(".box-results", state="detached", timeout=15000)
     page.click(".box-tools button:has-text('Filtres')")
     sha = mf_pst("info", path)["hash"]["sha256"]
+    # Export (P040, P041) : deux lignes cochées, archive ZIP téléchargée, contrôlée avec la CLI.
+    import zipfile
+
+    page.click(".box-back")
+    row = page.locator(f'.folder-row[title="{title}"]')
+    row.click()
+    page.wait_for_selector(".box-row")
+    checks = page.locator(".box-row .row-check")
+    checks.nth(0).check()
+    checks.nth(1).check()
+    check("Exporter la sélection (2)" in page.locator(".btn-export").inner_text(), f"{name} : 2 éléments cochés")
+    with page.expect_download(timeout=120000) as dl:
+        page.click(".btn-export")
+    zpath = pathlib.Path(dl.value.path())
+    with zipfile.ZipFile(zpath) as z:
+        names = z.namelist()
+        man = json.loads(z.read("manifest.json"))
+        tmpd = pathlib.Path(tempfile.mkdtemp())
+        z.extractall(tmpd)
+    check(len(man["items"]) == 2 and "manifest.csv" in names and len(names) == 4, f"{name} : archive avec 2 .msg et le manifeste ({dl.value.suggested_filename})")
+    sha_cli = mf_pst("info", path)["hash"]["sha256"]
+    check(man["store"]["sha256"] == sha_cli and man["store"]["verified"], f"{name} : manifeste — empreinte de la boîte revérifiée, identique à la CLI")
+    reopened = all(
+        subprocess.run([MF, "show", str(tmpd / it["file"])], capture_output=True).returncode == 0
+        and hashlib.sha256((tmpd / it["file"]).read_bytes()).hexdigest() == it["sha256"]
+        for it in man["items"]
+    )
+    check(reopened, f"{name} : .msg exportés relus par la CLI, empreintes conformes au manifeste")
+    page.click(".box-export button:has-text('Décocher')")
+    page.select_option("select[data-keep='export-format']", "eml")
+    page.wait_for_selector(".btn-export:has-text('Exporter le dossier')")
+    page.click(".box-back")
+    page.wait_for_selector(".folder-row")
+
     # Empreinte calculée : la progression disparaît de la colonne de gauche, l'empreinte est dans le
     # scellé de l'élément ouvert (colonne de droite).
     page.wait_for_selector(".box-hash", state="detached", timeout=60000)
     page.wait_for_selector(f".seal:has-text('{sha}')", timeout=15000)
     check(page.locator(".seal-pending").count() == 0, f"{name} : empreinte SHA-256 de la boîte identique à la CLI, dans le scellé")
-    page.click(".box-back")
+    # Arborescence (après l'export) → liste des fichiers.
     page.click(".box-back")
     page.wait_for_selector(".box-entry")
 

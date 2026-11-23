@@ -88,6 +88,19 @@ every report. The mailbox is opened read-only and never loaded into memory as a 
 multi-gigabyte mailbox opens in milliseconds. Unicode and ANSI PST, Outlook 2013+ OST. Contacts,
 appointments and tasks are shown without a verdict.
 
+**Export what matters.** Tick messages, or export a whole folder or search result, as `.msg`
+(Outlook properties kept as they are, named properties included) or as a reconstructed `.eml`
+(clearly marked as such). Each export comes with a JSON and CSV manifest: provenance, the hash of
+every file produced, and the mailbox hash recomputed just before the export — if the mailbox has
+changed since it was opened, nothing is exported. On the desktop the files go to a new folder,
+never the evidence folder; in the browser they arrive as a ZIP.
+
+A PST does not keep the original file of a message, so the seal shows, under the mailbox hash, a
+**content hash of the item**: SHA-256 of its sorted Outlook properties and attachments — stable,
+and recomputable from the mailbox.
+
+![Selecting items for export; the seal shows the mailbox hash and the item's content hash](docs/apercu-pst-export.png)
+
 **Find a message without reading them all.** Search and filter a folder or the whole mailbox by
 sender name, recipient, subject, date range, size, attachments or Message-ID — using only the folder
 tables, so not a single message is opened. Once you have opened a few, filter them by verdict or
@@ -171,6 +184,9 @@ mf pst ls mailbox.pst --from-name bailey --attachments --after 2001-05-01
 mf pst show mailbox.pst --id 2097220 --headers   # read and analyse a single item
 mf pst report mailbox.pst --id 2097220 --out r.html
 mf pst iocs mailbox.pst --id 2097220,2097252 --defang   # indicators of chosen items
+mf pst export mailbox.pst --from-name bailey --attachments --out ./export
+                                                 # .msg files + manifest.json / manifest.csv
+mf pst export mailbox.pst --id 2097220 --format eml --out ./export-eml
 ```
 
 Every command accepts `--json`.
@@ -244,7 +260,6 @@ then a plan and tasks checked off as they are implemented.
 
 ## Roadmap
 
-- **Mailboxes, continued**: export of items as `.msg` / `.eml` with a manifest.
 - **Team lists**: the organisation's legitimate domains, imported block lists, in-house rules taken
   into account by the verdict.
 - Contents of archives and Office documents.

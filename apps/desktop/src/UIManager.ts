@@ -2,6 +2,7 @@
 
 import { formatDate, h, humanSize, toast } from "./dom";
 import {
+  boxExport,
   boxFilter,
   boxIocs,
   boxItem,
@@ -83,6 +84,9 @@ export class UIManager {
   private filterSeq = 0;
   /** Critères saisis, à jour immédiatement (le résultat du moteur arrive après). */
   private drafts = new Map<number, BoxFilter>();
+  /** Dernière case cochée (Maj+clic : plage). */
+  private lastChecked: { boxId: number; id: number } | null = null;
+  private exporting = false;
   private renderToken = 0;
   private lastKey = "";
 
@@ -436,6 +440,7 @@ export class UIManager {
                 ),
               )
             : null,
+          showsRows ? this.exportTools(b) : null,
           analyzed
             ? h(
                 "span",
@@ -460,6 +465,77 @@ export class UIManager {
       );
     }
     return out;
+  }
+
+  /** Sélection et export (P041) : la sélection cochée, sinon toutes les lignes affichées. */
+  private exportTools(b: BoxState): HTMLElement {
+    const rows = this.state.visibleRows(b.boxId);
+    const n = b.selected.size;
+    const target = n ? `la sélection (${n})` : b.results ? `les ${rows.length} résultat(s)` : `le dossier (${rows.length})`;
+    const allChecked = rows.length > 0 && rows.every((r) => b.selected.has(r.id));
+    return h(
+      "span",
+      { class: "box-export" },
+      h(
+        "label",
+        { class: "filter-check", title: "Cocher ou décocher toutes les lignes affichées" },
+        h("input", {
+          type: "checkbox",
+          "data-keep": "check-all",
+          checked: allChecked,
+          onchange: (e: Event) => this.state.setChecked(b.boxId, rows.map((r) => r.id), (e.target as HTMLInputElement).checked),
+        }),
+        "Tout",
+      ),
+      n ? h("button", { class: "btn btn-small", type: "button", onclick: () => this.state.setChecked(b.boxId, [...b.selected], false) }, "Décocher") : null,
+      h(
+        "select",
+        {
+          "data-keep": "export-format",
+          "aria-label": "Format d'export",
+          title: ".msg : propriétés Outlook reprises telles quelles. .eml : message reconstruit (ce n'est pas l'original).",
+          onchange: (e: Event) => this.state.setExportFormat(b.boxId, (e.target as HTMLSelectElement).value as "msg" | "eml"),
+        },
+        h("option", { value: "msg", selected: b.exportFormat === "msg" }, ".msg (fidèle)"),
+        h("option", { value: "eml", selected: b.exportFormat === "eml" }, ".eml (reconstruit)"),
+      ),
+      h(
+        "button",
+        {
+          class: "btn btn-small btn-export",
+          type: "button",
+          disabled: this.exporting || (!n && !rows.length),
+          onclick: () => void this.exportBox(b, n ? [...b.selected] : rows.map((r) => r.id)),
+        },
+        this.exporting ? "Export en cours…" : `Exporter ${target}`,
+      ),
+    );
+  }
+
+  private async exportBox(b: BoxState, ids: number[]): Promise<void> {
+    if (this.exporting || !ids.length) return;
+    if (ids.length > 500) {
+      const ok = await confirmBox(
+        `${ids.length} éléments vont être lus et écrits en .${b.exportFormat}, avec un manifeste. L'empreinte de la boîte est d'abord recalculée.`,
+        "Exporter ?",
+      );
+      if (!ok) return;
+    }
+    this.exporting = true;
+    this.renderList();
+    toast(`Export : revérification de l'empreinte de la boîte, puis ${ids.length} élément(s)…`);
+    try {
+      const r = await boxExport(b.boxId, ids, b.exportFormat, b.store.name);
+      if (!r) return;
+      const { manifest, where } = r;
+      const errs = manifest.errors.length ? ` ; ${manifest.errors.length} illisible(s), listé(s) dans le manifeste` : "";
+      toast(`${manifest.items.length} élément(s) exporté(s) en .${manifest.format}, manifeste compris : ${where}${errs}`);
+    } catch (e) {
+      toast(`Export impossible : ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      this.exporting = false;
+      this.renderList();
+    }
   }
 
   /** Lance le filtre dans le moteur ; sans critère, revient à la navigation par dossier. */
@@ -635,6 +711,30 @@ export class UIManager {
         "data-id": String(r.id),
         onclick: () => s.selectBoxItem(boxId, r.id),
       },
+      h("input", {
+        type: "checkbox",
+        class: "row-check",
+        "aria-label": `Sélectionner pour l'export : ${r.subject?.trim() || "(sans objet)"}`,
+        checked: b.selected.has(r.id),
+        onclick: (e: Event) => {
+          e.stopPropagation();
+          const on = (e.target as HTMLInputElement).checked;
+          const rows = s.visibleRows(boxId);
+          const last = this.lastChecked;
+          if ((e as MouseEvent).shiftKey && last && last.boxId === boxId) {
+            const a = rows.findIndex((x) => x.id === last.id);
+            const z = rows.findIndex((x) => x.id === r.id);
+            if (a >= 0 && z >= 0) {
+              const [lo, hi] = a < z ? [a, z] : [z, a];
+              s.setChecked(boxId, rows.slice(lo, hi + 1).map((x) => x.id), on);
+              this.lastChecked = { boxId, id: r.id };
+              return;
+            }
+          }
+          this.lastChecked = { boxId, id: r.id };
+          s.setChecked(boxId, [r.id], on);
+        },
+      }),
       h("span", { class: "from" }, r.from_address ?? r.from_name ?? "—"),
       h("span", { class: "date" }, formatDate(r.received ?? r.sent)),
       h("span", { class: "subject" }, r.subject?.trim() || "(sans objet)"),

@@ -284,6 +284,38 @@ fn box_report(
     })
 }
 
+/// Exporte des éléments d'une boîte (FR-008) dans `dest` : dossier vide ou à créer, hors du
+/// dossier de la preuve. Asynchrone : l'export (empreinte revérifiée comprise) ne fige pas la
+/// fenêtre.
+#[tauri::command]
+async fn box_export(
+    box_id: usize,
+    ids: Vec<u32>,
+    format: String,
+    generated: String,
+    dest: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<mf_engine::export::Manifest, String> {
+    let format = mf_engine::export::ExportFormat::parse(&format)?;
+    let keys = state.keys.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let (tx, box_path) = with_box(&state, box_id, |h| Ok((h.tx.clone(), h.path.clone())))?;
+    let dest = mf_engine::export::prepare_export_dir(std::path::Path::new(&dest), &box_path)?;
+    let (reply, rx) = std::sync::mpsc::channel();
+    tx.send(mailbox::Req::Export {
+        ids,
+        format,
+        generated,
+        keys,
+        dest,
+        reply,
+    })
+    .map_err(|_| "boîte fermée".to_string())?;
+    tauri::async_runtime::spawn_blocking(move || rx.recv())
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|_| "boîte fermée".to_string())?
+}
+
 #[tauri::command]
 fn box_save_attachment(
     box_id: usize,
@@ -537,6 +569,7 @@ fn main() {
             box_list,
             box_filter,
             box_iocs,
+            box_export,
             box_item,
             box_report,
             box_save_attachment

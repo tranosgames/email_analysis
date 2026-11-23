@@ -47,6 +47,9 @@ export interface BoxState {
   results: ItemSummary[] | null;
   /** Dossiers illisibles ignorés par le dernier filtre. */
   skipped: number;
+  /** Éléments cochés pour l'export (P041). */
+  selected: Set<number>;
+  exportFormat: "msg" | "eml";
 }
 
 /** Ce que montre le panneau de gauche. */
@@ -104,6 +107,8 @@ export class MessageHandler {
           filter: {},
           results: null,
           skipped: 0,
+          selected: new Set(),
+          exportFormat: "msg",
         });
         boxes++;
       } else if (r.kind === "duplicate") dup++;
@@ -168,6 +173,24 @@ export class MessageHandler {
     if (b?.results) b.results = null;
     else if (this.view.kind === "box" && this.view.folder !== null) this.view = { ...this.view, folder: null };
     else this.view = { kind: "files" };
+    this.emit();
+  }
+
+  /** Coche ou décoche des éléments pour l'export. */
+  setChecked(boxId: number, ids: number[], on: boolean): void {
+    const b = this.box(boxId);
+    if (!b) return;
+    for (const id of ids) {
+      if (on) b.selected.add(id);
+      else b.selected.delete(id);
+    }
+    this.emit();
+  }
+
+  setExportFormat(boxId: number, format: "msg" | "eml"): void {
+    const b = this.box(boxId);
+    if (!b) return;
+    b.exportFormat = format;
     this.emit();
   }
 

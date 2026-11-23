@@ -554,8 +554,8 @@ impl ZipWriter {
         c.extend_from_slice(&size.to_le_bytes());
         c.extend_from_slice(&size.to_le_bytes());
         c.extend_from_slice(&name_len.to_le_bytes());
-        c.extend_from_slice(&[0u8; 8]); // extra, commentaire, disque
-        c.extend_from_slice(&[0u8; 6]); // attributs internes et externes
+        c.extend_from_slice(&[0u8; 6]); // longueurs extra et commentaire, disque de départ
+        c.extend_from_slice(&[0u8; 6]); // attributs internes (2) et externes (4)
         c.extend_from_slice(&offset.to_le_bytes());
         c.extend_from_slice(name_b);
         Ok(())
@@ -628,9 +628,41 @@ mod tests {
         z.add("a.txt", b"bonjour").unwrap();
         z.add("dossier/é.bin", &[0u8, 1, 2]).unwrap();
         let bytes = z.finish().unwrap();
-        // Signature de fin et deux entrées.
+        let u16_at = |b: &[u8], i: usize| u16::from_le_bytes([b[i], b[i + 1]]) as usize;
+        let u32_at =
+            |b: &[u8], i: usize| u32::from_le_bytes([b[i], b[i + 1], b[i + 2], b[i + 3]]) as usize;
+        // Fin d'archive : deux entrées, puis chaque entrée du répertoire central relue jusqu'à
+        // son en-tête local et ses données.
         let end = &bytes[bytes.len() - 22..];
-        assert_eq!(&end[..4], &0x0605_4b50u32.to_le_bytes());
-        assert_eq!(u16::from_le_bytes([end[10], end[11]]), 2);
+        assert_eq!(u32_at(end, 0), 0x0605_4b50);
+        assert_eq!(u16_at(end, 10), 2);
+        let mut at = u32_at(end, 16);
+        let mut seen = Vec::new();
+        for _ in 0..2 {
+            assert_eq!(
+                u32_at(&bytes, at),
+                0x0201_4b50,
+                "signature d'entrée centrale"
+            );
+            let size = u32_at(&bytes, at + 20);
+            let crc = u32_at(&bytes, at + 16) as u32;
+            let name_len = u16_at(&bytes, at + 28);
+            let extra = u16_at(&bytes, at + 30) + u16_at(&bytes, at + 32);
+            let local = u32_at(&bytes, at + 42);
+            let name = std::str::from_utf8(&bytes[at + 46..at + 46 + name_len]).unwrap();
+            assert_eq!(u32_at(&bytes, local), 0x0403_4b50, "en-tête local");
+            let data_at = local + 30 + u16_at(&bytes, local + 26) + u16_at(&bytes, local + 28);
+            let data = &bytes[data_at..data_at + size];
+            assert_eq!(crc32(data), crc);
+            seen.push((name.to_string(), data.to_vec()));
+            at += 46 + name_len + extra;
+        }
+        assert_eq!(
+            seen,
+            vec![
+                ("a.txt".to_string(), b"bonjour".to_vec()),
+                ("dossier/é.bin".to_string(), vec![0, 1, 2])
+            ]
+        );
     }
 }

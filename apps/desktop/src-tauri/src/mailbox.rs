@@ -47,6 +47,15 @@ pub enum Req {
         keys: Keyring,
         reply: Reply<(String, String, Vec<u8>)>,
     },
+    /// Export (FR-008) dans un dossier déjà vérifié (vide, hors du dossier de la preuve).
+    Export {
+        ids: Vec<u32>,
+        format: mf_engine::export::ExportFormat,
+        generated: String,
+        keys: Keyring,
+        dest: PathBuf,
+        reply: Reply<mf_engine::export::Manifest>,
+    },
     /// Nouveau trousseau : les analyses seront refaites à la prochaine ouverture.
     Forget,
 }
@@ -220,6 +229,29 @@ fn run(mut s: BoxSession, rx: Receiver<Req>, box_id: usize, app: AppHandle) {
                             .map_err(|e| e.to_string())
                     })
                     .map(|x| (x.file_name, x.sha256, x.data));
+                let _ = reply.send(r);
+            }
+            Req::Export {
+                ids,
+                format,
+                generated,
+                keys,
+                dest,
+                reply,
+            } => {
+                let r = s
+                    .export(&ids, format, &generated, &keys, None, &mut |name, bytes| {
+                        // Création exclusive : jamais d'écrasement.
+                        let mut f = std::fs::OpenOptions::new()
+                            .write(true)
+                            .create_new(true)
+                            .open(dest.join(name))?;
+                        std::io::Write::write_all(&mut f, bytes)
+                    })
+                    .map_err(|e| e.to_string());
+                if r.is_ok() {
+                    hashed = true;
+                }
                 let _ = reply.send(r);
             }
             Req::Forget => s.forget_analyses(),

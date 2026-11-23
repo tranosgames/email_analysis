@@ -333,6 +333,81 @@ pub fn box_forget(id: u32) {
     });
 }
 
+/// Empreinte d'un fichier calculée en flux par le Worker (revérification avant un export) :
+/// mêmes octets que `box_hash_feed`, mais indépendante de la session.
+#[wasm_bindgen]
+pub struct FreshHasher(mf_pst::hash::StreamHasher);
+
+#[wasm_bindgen]
+impl FreshHasher {
+    #[wasm_bindgen(constructor)]
+    pub fn new(total: f64) -> Self {
+        Self(mf_pst::hash::StreamHasher::new(total.max(0.0) as u64))
+    }
+    /// Octets à partir de `offset` ; retourne `[sha256, md5]` à la fin, sinon `undefined`.
+    pub fn feed(&mut self, offset: f64, data: &[u8]) -> Option<Vec<String>> {
+        self.0
+            .feed(offset.max(0.0) as u64, data)
+            .map(|d| vec![d.sha256, d.md5])
+    }
+    pub fn done(&self) -> f64 {
+        self.0.progress().0 as f64
+    }
+}
+
+/// Résultat d'un export : archive ZIP (fichiers et manifeste) et manifeste JSON.
+#[wasm_bindgen]
+pub struct BoxExport {
+    zip: Vec<u8>,
+    manifest: String,
+}
+
+#[wasm_bindgen]
+impl BoxExport {
+    /// Octets de l'archive (copiés une fois vers JavaScript).
+    pub fn zip(&self) -> Vec<u8> {
+        self.zip.clone()
+    }
+    pub fn manifest(&self) -> String {
+        self.manifest.clone()
+    }
+}
+
+/// Exporte des éléments (FR-008) en `.msg` ou `.eml`, dans une archive ZIP avec le manifeste.
+/// `sha256` / `md5` : empreinte recalculée en flux juste avant par le Worker ; si elle diffère
+/// de celle de l'ouverture, rien n'est exporté.
+#[wasm_bindgen]
+pub fn box_export(
+    id: u32,
+    ids: Vec<u32>,
+    format: &str,
+    generated_utc: &str,
+    sha256: String,
+    md5: String,
+) -> Result<BoxExport, JsError> {
+    let format = mf_engine::export::ExportFormat::parse(format).map_err(|e| JsError::new(&e))?;
+    KEYS.with(|k| {
+        let keys = k.borrow();
+        with_box(id, |s| {
+            let mut zip = mf_engine::export::ZipWriter::new();
+            let manifest = s
+                .export(
+                    &ids,
+                    format,
+                    generated_utc,
+                    &keys,
+                    Some((sha256, md5)),
+                    &mut |name, bytes| zip.add(name, bytes),
+                )
+                .map_err(js_err)?;
+            Ok(BoxExport {
+                zip: zip.finish().map_err(js_err)?,
+                manifest: manifest.to_json(),
+            })
+        })
+    })
+}
+
 /// Taille de la mémoire WebAssembly du moteur, en octets (mesures, SC-004).
 #[wasm_bindgen]
 pub fn engine_memory_bytes() -> f64 {
