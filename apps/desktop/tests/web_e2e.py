@@ -48,6 +48,22 @@ def cli(path: pathlib.Path) -> tuple[dict, dict]:
     return ev, msg
 
 
+def tab(page, which: str):
+    """Ouvre la fenêtre « Contenu du message » sur l'onglet voulu (files, urls, iocs)."""
+    if page.locator("dialog[open]").count() == 0:
+        page.click(f".content-{which}")
+    else:
+        page.click(f"dialog[open] .modal-tab[data-tab='{which}']")
+    page.wait_for_selector(f"dialog[open] .modal-tab[data-tab='{which}'][aria-selected='true']")
+    return page.locator("dialog[open] .modal-body")
+
+
+def close(page) -> None:
+    if page.locator("dialog[open]").count():
+        page.keyboard.press("Escape")
+        page.wait_for_selector("dialog[open]", state="detached")
+
+
 def mf_pst(*args: object) -> object:
     return json.loads(subprocess.check_output([MF, "--json", "pst", *map(str, args)]))
 
@@ -66,7 +82,7 @@ def check_box(page, path: pathlib.Path, folder_name: str) -> None:
     fc.value.set_files(str(path))
     page.wait_for_selector(".box-head .box-title", timeout=30000)
     opened = time.monotonic() - t0
-    check(name in page.locator(".box-head").inner_text(), f"{name} : boîte ouverte en {opened:.2f} s, arborescence affichée")
+    check(name in (page.locator(".box-title").get_attribute("title") or ""), f"{name} : boîte ouverte en {opened:.2f} s, arborescence affichée")
     check("0 élément(s) lu(s)" in page.locator(".box-read").inner_text(), f"{name} : aucun élément lu à l'ouverture")
     # Plusieurs dossiers peuvent porter le même nom : on désigne celui de la CLI par son chemin.
     title = " › ".join(folder["path"]).replace('"', '\\"')
@@ -83,17 +99,19 @@ def check_box(page, path: pathlib.Path, folder_name: str) -> None:
     item = mf_pst("show", "--id", ordered[0]["id"], path)
     crumbs = page.locator(".breadcrumb").inner_text()
     check(name in crumbs and folder_name in crumbs, f"{name} : provenance « {crumbs.replace(chr(10), ' ')} »")
-    names = [n.inner_text() for n in page.locator(".inventory .file-name").all()]
+    names = tab(page, "files").locator(".file-name").all_inner_texts()
+    close(page)
     check(names == [a["filename"] for a in item["message"]["attachments"]], f"{name} : pièces jointes identiques à la CLI {names}")
     check("1 élément(s) lu(s)" in page.locator(".box-read").inner_text(), f"{name} : seul l'élément cliqué est lu")
     with_att = next((i for i, r in enumerate(ordered[:20]) if r.get("has_attachments")), None)
     if with_att is not None:
         page.locator(".box-row").nth(with_att).click()
-        page.wait_for_selector(".inventory button.download", timeout=30000)
+        page.wait_for_selector(".content-files .count:not(:text('0'))", timeout=30000)
         att = mf_pst("show", "--id", ordered[with_att]["id"], path)["message"]["attachments"][0]
         page.once("dialog", lambda d: d.accept())
         with page.expect_download() as dl:
-            page.locator(".inventory button.download").first.click()
+            tab(page, "files").locator("button.download").first.click()
+        close(page)
         got = hashlib.sha256(pathlib.Path(dl.value.path()).read_bytes()).hexdigest()
         check(got == att["sha256"], f"{name} : pièce jointe « {att['filename']} » téléchargée, SHA-256 identique")
     # Recherche sur toute la boîte (FR-007) : mêmes résultats que `mf pst ls --text`, rien de lu.
@@ -139,8 +157,11 @@ def check_box(page, path: pathlib.Path, folder_name: str) -> None:
     page.wait_for_selector(".box-results", state="detached", timeout=15000)
     page.click(".box-tools button:has-text('Filtres')")
     sha = mf_pst("info", path)["hash"]["sha256"]
-    page.wait_for_selector(f".box-hash[title*='{sha}']", timeout=60000)
-    check(True, f"{name} : empreinte SHA-256 de la boîte identique à la CLI")
+    # Empreinte calculée : la progression disparaît de la colonne de gauche, l'empreinte est dans le
+    # scellé de l'élément ouvert (colonne de droite).
+    page.wait_for_selector(".box-hash", state="detached", timeout=60000)
+    page.wait_for_selector(f".seal:has-text('{sha}')", timeout=15000)
+    check(page.locator(".seal-pending").count() == 0, f"{name} : empreinte SHA-256 de la boîte identique à la CLI, dans le scellé")
     page.click(".box-back")
     page.click(".box-back")
     page.wait_for_selector(".box-entry")
@@ -199,16 +220,18 @@ def main() -> int:
             check(ev["sha256"] in seal and ev["md5"] in seal, f"{name} : SHA-256 et MD5 identiques à la CLI")
             btn = page.locator(".header-toggle-row button").first.inner_text()
             check(f"({len(msg['headers'])})" in btn, f"{name} : {len(msg['headers'])} en-têtes")
-            files = page.locator(".inventory section.files")
+            files = tab(page, "files")
             names = files.locator(".file-name").all_inner_texts()
             check(names == [a["filename"] for a in msg["attachments"]], f"{name} : fichiers contenus {names}")
             hashes = files.locator(".file-hash").all_inner_texts()
             check(all(a["sha256"] in h for a, h in zip(msg["attachments"], hashes)), f"{name} : SHA-256 des fichiers")
             check(all(a["md5"] in h for a, h in zip(msg["attachments"], hashes)), f"{name} : MD5 visibles sans survol")
-            urls = page.locator(".inventory section.urls > ul > li > .url-text").all_inner_texts()
+            urls = tab(page, "urls").locator("section.urls > ul > li > .url-text").all_inner_texts()
+            close(page)
             # FR-042 : panneau d'acheminement au-dessus des fichiers, expéditeur en titre.
             route = msg.get("route") or {}
-            check(page.locator(".inventory > section").first.get_attribute("class") == "route", f"{name} : acheminement en tête du panneau")
+            classes = [c.get_attribute("class") for c in page.locator(".inventory > section").all()]
+            check(classes[:1] == ["content-card"] and (not route or "route" in classes), f"{name} : contenu du message puis acheminement dans le panneau ({classes})")
             if route.get("sender"):
                 check(page.locator(".route-title").inner_text() == route["sender"], f"{name} : titre = {route['sender']}")
             origin = (route.get("origin") or {}).get("ip")
@@ -237,6 +260,8 @@ def main() -> int:
 
         # FR-038 : téléchargement avec boîte de confirmation.
         page.locator(".message-item", has_text="Urgent : mot de passe").click()
+        page.wait_for_selector(".content-files")
+        tab(page, "files")
         page.wait_for_selector("button.download")
         seen: list[str] = []
         downloads: list[object] = []
@@ -259,9 +284,14 @@ def main() -> int:
         digest = hashlib.sha256(pathlib.Path(saved).read_bytes()).hexdigest()
         check(dl.value.suggested_filename == "facture.pdf.exe", f"OK : fichier proposé « {dl.value.suggested_filename} »")
         check(digest == "34b9348ecccb09747637e5bdaa744e48362a9e684b260766e49868f2e50cecab", "OK : SHA-256 du fichier téléchargé identique")
+        close(page)
+        check(page.locator("dialog[open]").count() == 0, "Échap ferme la fenêtre des fichiers")
         page.locator(".message-item", has_text="Test Email").click()
+        page.wait_for_selector(".content-files")
+        tab(page, "files")
         check(page.locator("button.download").nth(0).is_disabled(), "objet MAPI embarqué : téléchargement indisponible")
         check(page.locator("button.download").nth(2).is_enabled(), ".msg joint : téléchargeable")
+        close(page)
 
         # Bouton des en-têtes (touche H) sur le message de phishing.
         page.locator(".message-item", has_text="Urgent : mot de passe").click()
@@ -273,9 +303,12 @@ def main() -> int:
 
         # Message joint : test_email.msg › PJ 3 (fichier .msg joint).
         page.locator(".message-item", has_text="Test Email").click()
-        page.locator("button.open-embedded").nth(1).click()
+        tab(page, "files").locator("button.open-embedded").nth(1).click()
+        page.wait_for_selector(".breadcrumb")
         check("PJ 3" in page.locator(".breadcrumb").inner_text(), "message joint ouvert avec fil d'Ariane")
-        check(page.locator(".inventory .file-name").count() == 2, "message joint : 2 fichiers contenus")
+        check(page.locator("dialog[open]").count() == 0, "fenêtre refermée à l'ouverture du message joint")
+        check(tab(page, "files").locator(".file-name").count() == 2, "message joint : 2 fichiers contenus")
+        close(page)
         page.keyboard.press("Escape")
         check(page.locator(".breadcrumb").count() == 0, "Échap revient au message parent")
 
@@ -292,15 +325,15 @@ def main() -> int:
         check("imitant « microsoft »" in fx, "constat : expéditeur sosie de microsoft")
         check("user@hôte" in fx, "constat : lien user@hôte")
         check(page.locator(".finding .sev-high").count() >= 4, "au moins 4 constats élevés")
-        files_txt = page.locator(".inventory section.files").inner_text()
+        files_txt = tab(page, "files").inner_text()
         check("chiffr" in files_txt.lower() and "HTML" in files_txt, "badges des pièces jointes (archive chiffrée, HTML)")
-        check("pаypal.example" in page.locator(".inventory").inner_text(), "URL : domaine Unicode réel affiché")
+        check("pаypal.example" in tab(page, "urls").inner_text(), "URL : domaine Unicode réel affiché")
+        page.screenshot(path=str(APP / "test-results" / "web-fenetre-url.png"))
+        close(page)
         page.screenshot(path=str(APP / "test-results" / "web-analyse.png"), full_page=False)
         check(page.locator(".export-all").inner_text() == "Télécharger tous les indicateurs", "libellé du bouton d'export global")
-        page.locator(".reading-grid > .inventory").hover()
-        page.mouse.wheel(0, 1200)
-        page.wait_for_timeout(300)
-        check(page.locator(".reading-main").evaluate("e => e.scrollTop") == 0 and page.locator(".reading-grid > .inventory").evaluate("e => e.scrollTop") > 0, "panneau de droite : défilement indépendant du corps")
+        overflow = [page.locator(sel).evaluate("e => getComputedStyle(e).overflowY") for sel in (".reading-main", ".reading-grid > .inventory")]
+        check(overflow == ["auto", "auto"], f"panneau de droite : défilement indépendant du corps ({overflow})")
         check(page.locator(".inventory > .seal").count() == 1 and page.locator(".reading-main .seal").count() == 0, "empreintes de la preuve en tête du panneau de droite")
         page.click(".analysis-toggle")
         check(page.locator(".analysis-body").is_hidden() and page.locator(".analysis-head .sev-high").is_visible(), "Replier : constats masqués, compteurs visibles")
@@ -326,8 +359,9 @@ def main() -> int:
                 check(rep["findings_summary"]["high"] >= 4, "rapport JSON : synthèse des constats")
                 check(rep["verdict"]["level"] == "malicious", "rapport JSON : verdict")
         with page.expect_download() as dl:
-            page.click(".ioc-csv")
+            tab(page, "iocs").locator(".ioc-csv").click()
         csv = pathlib.Path(dl.value.path()).read_text(encoding="utf-8-sig")
+        close(page)
         check("198.51.100.77" in csv and "micros0ft-security" in csv, "export CSV des indicateurs")
         with page.expect_download() as dl:
             page.click(".export-all")
@@ -337,17 +371,20 @@ def main() -> int:
         # FR-046 à FR-048 : QR codes, page HTML jointe, redirections décodées.
         page.locator(".message-item", has_text="Contrat_2026").click()
         page.wait_for_selector("section.verdict.v-malicious")
-        inv = page.locator(".inventory").inner_text()
-        check("quish-m365.example/scan" in page.locator("section.files").inner_text(), "QR code de l'image jointe décodé")
-        check("QR code dans l'image n° 1 intégrée au HTML" in inv, "QR code d'une image data: décodé")
+        files_txt = tab(page, "files").inner_text()
         rep = page.locator(".html-report").inner_text()
+        inv = files_txt + tab(page, "urls").inner_text()
+        close(page)
+        check("quish-m365.example/scan" in files_txt, "QR code de l'image jointe décodé")
+        check("QR code dans l'image n° 1 intégrée au HTML" in inv, "QR code d'une image data: décodé")
         check("collect.evil-kit.example/next.php" in rep and "bot Telegram" in rep, "page HTML jointe : formulaire et exfiltration")
         check("victim@victim.example" in rep, "page HTML jointe : destinataire pré-rempli")
         check("Redirecteur détourné (Bing)" in inv and "login.evil-kit.example/auth" in inv, "redirection Bing décodée")
         check("Lien réécrit (Microsoft Safe Links)" in inv, "Safe Links décodé")
         check(page.locator(".finding", has_text="Texte du lien différent").count() == 0, "Safe Links : pas de faux « texte ≠ destination »")
-        page.locator("section.files").scroll_into_view_if_needed()
+        tab(page, "files")
         page.screenshot(path=str(APP / "test-results" / "web-quishing.png"))
+        close(page)
 
         # FR-049 à FR-051 : signatures PGP / S/MIME, trousseau local, liens externes.
         def open_msg(subject: str) -> None:
@@ -424,7 +461,8 @@ def main() -> int:
         check(page.locator(".html-source li.mf-flash").get_attribute("data-line") == "16", "« Voir dans la source » atteint la ligne 16 (iframe)")
         check(page.locator(".html-source li.has-blocked").count() == 8, "8 lignes du HTML portent une ressource bloquée")
         page.screenshot(path=str(APP / "test-results" / "web-bloquees-source.png"))
-        tagged = page.locator(".tag-blocked").count()
+        tagged = tab(page, "urls").locator(".tag-blocked").count()
+        close(page)
         check(tagged == 9, f"liste des URL : 9 URL marquées « chargement bloqué » ({tagged})")
         page.locator(".body-tabs button", has_text="HTML").first.click()
 

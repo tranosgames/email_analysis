@@ -192,10 +192,15 @@ export class UIManager {
 
   /** Progression de l'empreinte, mise à jour sans redessiner la liste. */
   showBoxHash(hp: BoxHash): void {
+    if (hp.sha256) return;
+    const pct = hp.total ? Math.floor((hp.done / hp.total) * 100) : 0;
     const v = this.state.view;
-    if (v.kind !== "box" || v.boxId !== hp.box_id || hp.sha256) return;
-    const el = this.list.querySelector<HTMLElement>(".box-hash");
-    if (el) el.textContent = `Empreinte : ${hp.total ? Math.floor((hp.done / hp.total) * 100) : 0} %`;
+    const el = v.kind === "box" && v.boxId === hp.box_id ? this.list.querySelector<HTMLElement>(".box-hash") : null;
+    if (el) el.textContent = `Empreinte de la boîte : ${pct} %`;
+    // Scellé du message ouvert depuis cette boîte.
+    if (this.state.selectedBoxItem?.boxId === hp.box_id) {
+      for (const dd of this.reading.querySelectorAll<HTMLElement>(".seal-pending")) dd.textContent = `calcul en cours… ${pct} %`;
+    }
   }
 
   private boxHead(b: BoxState, folder: FolderInfo | null): HTMLElement {
@@ -211,17 +216,10 @@ export class UIManager {
         h("button", { class: "btn btn-small box-back", type: "button", onclick: () => s.back() }, b.results ? (folder ? "‹ Dossier" : "‹ Dossiers") : folder ? "‹ Dossiers" : "‹ Fichiers"),
         h("strong", { class: "box-title", title: b.path }, b.results ? "Recherche" : folder ? folder.name || "Boîte" : b.store.display_name || b.store.name),
       ),
-      h(
-        "div",
-        { class: "box-meta" },
-        `${b.store.name} · ${b.store.format === "ost4k" ? "OST 2013+" : b.store.format === "ansi" ? "PST ANSI" : "PST"} · ${humanSize(b.store.size)}`,
-        b.store.password_protected ? " · protégé par mot de passe" : "",
-      ),
-      h(
-        "div",
-        { class: "box-meta box-hash", title: b.hash?.sha256 ? `SHA-256 ${b.hash.sha256}\nMD5 ${b.hash.md5 ?? ""}` : "Calcul de l'empreinte de la boîte" },
-        b.hash?.sha256 ? `SHA-256 ${b.hash.sha256.slice(0, 16)}…` : `Empreinte : ${pct} %`,
-      ),
+      // Nom, format et empreintes de la boîte : dans le scellé de la colonne de droite.
+      b.store.password_protected ? h("div", { class: "box-meta" }, "Boîte protégée par mot de passe") : null,
+      // Progression tant que l'empreinte n'est pas connue (elle s'affiche ensuite dans le scellé).
+      b.hash?.sha256 ? null : h("div", { class: "box-meta box-hash", title: "Calcul de l'empreinte de la boîte" }, `Empreinte de la boîte : ${pct} %`),
       h("div", { class: "box-meta box-read" }, `${read} élément(s) lu(s) sur ${b.store.items} — seuls les éléments ouverts sont lus`),
       ...this.boxTools(b, folder),
       b.store.unreadable.length

@@ -16,10 +16,43 @@ void onBoxHash((h) => {
   ui.showBoxHash(h);
 });
 
+// Liste des fichiers repliable ; état mémorisé sur ce poste (confort, facultatif).
+const app = document.getElementById("app") as HTMLElement;
+const collapseBtn = document.getElementById("collapse-list") as HTMLButtonElement;
+const expandBtn = document.getElementById("expand-list") as HTMLButtonElement;
+function setListCollapsed(collapsed: boolean): void {
+  app.classList.toggle("list-collapsed", collapsed);
+  collapseBtn.setAttribute("aria-expanded", String(!collapsed));
+  expandBtn.hidden = !collapsed;
+  try {
+    localStorage.setItem("mf.listCollapsed", collapsed ? "1" : "0");
+  } catch {
+    /* stockage indisponible : l'état n'est simplement pas mémorisé */
+  }
+  (collapsed ? expandBtn : collapseBtn).focus({ preventScroll: true });
+}
+collapseBtn.addEventListener("click", () => setListCollapsed(true));
+expandBtn.addEventListener("click", () => setListCollapsed(false));
+try {
+  if (localStorage.getItem("mf.listCollapsed") === "1") {
+    app.classList.add("list-collapsed");
+    collapseBtn.setAttribute("aria-expanded", "false");
+    expandBtn.hidden = false;
+  }
+} catch {
+  /* idem */
+}
+
 document.addEventListener("keydown", (e) => {
   const target = e.target as HTMLElement;
-  if (e.ctrlKey || e.metaKey || e.altKey || target.matches("input, textarea")) return;
+  if (e.ctrlKey || e.metaKey || e.altKey || target.matches("input, textarea, select")) return;
+  // Fenêtre modale ouverte (fichiers, URL, indicateurs) : elle gère ses touches, dont Échap.
+  if (document.querySelector("dialog[open]")) return;
   switch (e.key) {
+    case "l":
+    case "L":
+      setListCollapsed(!app.classList.contains("list-collapsed"));
+      break;
     case "ArrowDown":
     case "j":
       state.move(1);

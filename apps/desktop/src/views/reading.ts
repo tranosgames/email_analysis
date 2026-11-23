@@ -1,5 +1,6 @@
-// Panneau de lecture : scellé de la preuve, enveloppe, bouton des en-têtes (FR-035),
-// corps sûr, et colonne d'inventaire « Fichiers contenus » (FR-036) + « URL » (FR-037).
+// Panneau de lecture : scellé de la preuve, enveloppe, bouton des en-têtes (FR-035), corps sûr ;
+// colonne de droite : scellé, acheminement, et fenêtre à onglets « Fichiers contenus » (FR-036),
+// « URL » (FR-037), « Indicateurs » (FR-023).
 
 import { h, humanSize, toast } from "../dom";
 import type { Address, Attachment, CertInfo, ExternalLink, HtmlAttachmentReport, SignatureCheck, SignatureStatus, AuthResult, BlockedKind, BlockedResource, Endpoint, Finding, Header, Hop, Ioc, IocKind, IpScope, MailRoute, Message, MessageView, Severity, SourceRef, UrlEntry, UrlLocation, Verdict } from "../ipc";
@@ -83,8 +84,110 @@ export function renderReading(view: MessageView, crumbs: Crumb[], a: ReadingActi
 
   main.append(body(view));
 
-  const grid = h("div", { class: "reading-grid" }, main, inventory(seal(view), m.attachments, m.urls, a, m.blocked_resources, m.route, m.hops, m.iocs));
+  const modal = contentModal(m, a);
+  const grid = h("div", { class: "reading-grid" }, main, inventory(seal(view), m, modal.open), modal.dialog);
+  // La fenêtre ouverte survit au redessin du même message (empreinte calculée, verdict reporté…).
+  if (openContent && openContent.message === m) {
+    const { tab, scroll } = openContent;
+    requestAnimationFrame(() => {
+      if (grid.isConnected) modal.open(tab, undefined, scroll);
+    });
+  } else {
+    openContent = null;
+  }
   return grid;
+}
+
+type ContentTab = "files" | "urls" | "iocs";
+
+/** Onglet ouvert, pour le rouvrir après un redessin du même message. */
+let openContent: { message: Message; tab: ContentTab; scroll: number } | null = null;
+/** Ouvre la fenêtre du message affiché (utilisé par les renvois des constats). */
+let showContent: ((tab: ContentTab, focus?: string) => void) | null = null;
+
+/** Fenêtre modale à onglets : fichiers contenus, URL, indicateurs. */
+function contentModal(m: Message, a: ReadingActions): { dialog: HTMLDialogElement; open: (tab: ContentTab, focus?: string, scroll?: number) => void } {
+  const tabs: [ContentTab, string, number][] = [
+    ["files", "Fichiers contenus", m.attachments.length],
+    ["urls", "URL", m.urls.length],
+    ["iocs", "Indicateurs", m.iocs.length],
+  ];
+  const panel = h("div", { class: "modal-body", role: "tabpanel", tabindex: "0" });
+  const bar = h("div", { class: "modal-tabs", role: "tablist", "aria-label": "Contenu du message" });
+  const dialog = h(
+    "dialog",
+    { class: "content-modal", "aria-label": "Contenu du message" },
+    h(
+      "div",
+      { class: "modal-head" },
+      bar,
+      h("button", { class: "btn btn-small modal-close", type: "button", "aria-label": "Fermer", title: "Fermer (Échap)", onclick: () => dialog.close() }, "✕"),
+    ),
+    panel,
+  ) as HTMLDialogElement;
+  let current: ContentTab = "files";
+  const show = (tab: ContentTab) => {
+    current = tab;
+    for (const b of bar.querySelectorAll<HTMLButtonElement>("[role=tab]")) {
+      const on = b.dataset.tab === tab;
+      b.setAttribute("aria-selected", String(on));
+      b.tabIndex = on ? 0 : -1;
+    }
+    panel.replaceChildren(tab === "files" ? filesSection(m.attachments, a) : tab === "urls" ? urlsSection(m.urls, m.blocked_resources) : iocSection(m.iocs, a));
+    panel.scrollTop = 0;
+    if (openContent) openContent.tab = tab;
+  };
+  for (const [tab, label, n] of tabs) {
+    bar.append(
+      h(
+        "button",
+        {
+          class: "modal-tab",
+          type: "button",
+          role: "tab",
+          "data-tab": tab,
+          onclick: () => show(tab),
+          onkeydown: (e: Event) => {
+            const k = (e as KeyboardEvent).key;
+            if (k !== "ArrowRight" && k !== "ArrowLeft") return;
+            const i = tabs.findIndex(([t]) => t === current);
+            const next = tabs[(i + (k === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length][0];
+            show(next);
+            bar.querySelector<HTMLButtonElement>(`[data-tab="${next}"]`)?.focus();
+          },
+        },
+        label,
+        h("span", { class: "count" }, String(n)),
+      ),
+    );
+  }
+  panel.addEventListener("scroll", () => {
+    if (openContent) openContent.scroll = panel.scrollTop;
+  });
+  dialog.addEventListener("close", () => {
+    openContent = null;
+  });
+  // Clic sur le fond : fermeture.
+  dialog.addEventListener("click", (e) => {
+    if (e.target === dialog) dialog.close();
+  });
+  const open = (tab: ContentTab, focus?: string, scroll = 0) => {
+    show(tab);
+    if (!dialog.open) dialog.showModal();
+    openContent = { message: m, tab, scroll };
+    panel.scrollTop = scroll;
+    if (focus) {
+      const el = panel.querySelector(focus);
+      if (el) {
+        el.scrollIntoView({ block: "center" });
+        flash(el.closest("li") ?? el);
+      }
+    } else {
+      bar.querySelector<HTMLButtonElement>(`[data-tab="${tab}"]`)?.focus();
+    }
+  };
+  showContent = open;
+  return { dialog, open };
 }
 
 function seal(view: MessageView): HTMLElement {
@@ -94,9 +197,9 @@ function seal(view: MessageView): HTMLElement {
     { class: "seal", title: view.evidence.path },
     h("div", { class: "seal-file" }, `${name} — ${view.evidence.format.toUpperCase()}, ${humanSize(view.evidence.size)}`),
     h("dt", {}, "SHA-256"),
-    h("dd", {}, view.evidence.sha256),
+    view.evidence.sha256 ? h("dd", {}, view.evidence.sha256) : h("dd", { class: "seal-pending" }, "calcul en cours…"),
     h("dt", {}, "MD5"),
-    h("dd", {}, view.evidence.md5),
+    view.evidence.md5 ? h("dd", {}, view.evidence.md5) : h("dd", { class: "seal-pending" }, "calcul en cours…"),
   );
 }
 
@@ -611,15 +714,36 @@ function routeSection(r: MailRoute, hops: Hop[]): HTMLElement {
   return sec;
 }
 
-function inventory(evidence: HTMLElement, files: Attachment[], urls: UrlEntry[], a: ReadingActions, blocked: BlockedResource[], route: MailRoute | null, hops: Hop[], iocs: Ioc[]): HTMLElement {
+function inventory(evidence: HTMLElement, m: Message, open: (tab: ContentTab) => void): HTMLElement {
   return h(
     "aside",
     { class: "inventory", "aria-label": "Contenu du message" },
     evidence,
-    route ? routeSection(route, hops) : null,
-    filesSection(files, a),
-    urlsSection(urls, blocked),
-    iocSection(iocs, a),
+    contentCard(m, open),
+    m.route ? routeSection(m.route, m.hops) : null,
+  );
+}
+
+/** Accès à la fenêtre à onglets, avec le nombre d'éléments et d'alertes de chaque onglet. */
+function contentCard(m: Message, open: (tab: ContentTab) => void): HTMLElement {
+  const flaggedFiles = m.attachments.filter((f) => f.flags.length).length;
+  const flaggedUrls = m.urls.filter((u) => u.flags.length).length;
+  const entry = (tab: ContentTab, icon: string, label: string, n: number, alerts: number) =>
+    h(
+      "button",
+      { class: `content-entry content-${tab}`, type: "button", onclick: () => open(tab) },
+      h("span", { class: "content-icon", "aria-hidden": "true" }, icon),
+      h("span", { class: "content-label" }, label),
+      alerts ? h("span", { class: "sev sev-medium", title: `${alerts} élément(s) signalé(s)` }, `${alerts} ⚠`) : null,
+      h("span", { class: "count" }, String(n)),
+    );
+  return h(
+    "section",
+    { class: "content-card" },
+    h("h2", {}, "Contenu du message"),
+    entry("files", "📎", "Fichiers contenus", m.attachments.length, flaggedFiles),
+    entry("urls", "🔗", "URL", m.urls.length, flaggedUrls),
+    entry("iocs", "🧭", "Indicateurs", m.iocs.length, 0),
   );
 }
 
@@ -873,14 +997,10 @@ function goTo(r: SourceRef, a: ReadingActions): void {
     }
     return;
   }
-  const sel =
-    r.kind === "attachment"
-      ? `.inventory .file-name[data-att="${r.index}"]`
-      : r.kind === "url"
-        ? `.inventory .url-text[data-url="${CSS.escape(r.url)}"]`
-        : `.hops li:nth-child(${r.index})`;
-  if (r.kind === "hop") document.querySelector<HTMLDetailsElement>(".route details")?.setAttribute("open", "");
-  const el = document.querySelector(sel);
+  if (r.kind === "attachment") return showContent?.("files", `.file-name[data-att="${r.index}"]`);
+  if (r.kind === "url") return showContent?.("urls", `.url-text[data-url="${CSS.escape(r.url)}"]`);
+  document.querySelector<HTMLDetailsElement>(".route details")?.setAttribute("open", "");
+  const el = document.querySelector(`.hops li:nth-child(${r.index})`);
   if (el) flash(el.closest("li") ?? el);
 }
 

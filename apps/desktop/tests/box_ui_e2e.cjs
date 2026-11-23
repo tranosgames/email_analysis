@@ -105,7 +105,8 @@ const srv = http
   check(true, "flèche bas : élément suivant");
 
   await pg.evaluate(() => window.__emit("box-hash", { box_id: 0, done: 4, total: 4, sha256: "ab".repeat(32), md5: "cd".repeat(16) }));
-  await pg.waitForFunction(() => document.querySelector(".box-hash")?.textContent.includes("SHA-256"));
+  // Empreinte connue : la ligne de progression disparaît, l'empreinte est dans le scellé.
+  await pg.waitForFunction(() => !document.querySelector(".box-hash"));
   check((await pg.textContent(".seal")).includes("abab"), "empreinte de la boîte reportée sur le scellé");
 
   await pg.click(".box-back");
