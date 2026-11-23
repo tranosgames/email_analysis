@@ -96,6 +96,48 @@ def check_box(page, path: pathlib.Path, folder_name: str) -> None:
             page.locator(".inventory button.download").first.click()
         got = hashlib.sha256(pathlib.Path(dl.value.path()).read_bytes()).hexdigest()
         check(got == att["sha256"], f"{name} : pièce jointe « {att['filename']} » téléchargée, SHA-256 identique")
+    # Recherche sur toute la boîte (FR-007) : mêmes résultats que `mf pst ls --text`, rien de lu.
+    word = (ordered[0].get("subject") or "").split()[0] if (ordered[0].get("subject") or "").split() else "a"
+    want = mf_pst("ls", "--text", word, path)
+    read_before = page.locator(".box-read").inner_text()
+    page.fill(".box-search", word)
+    page.wait_for_selector(".box-results", timeout=15000)
+    check(f"{len(want)} résultat(s)" in page.locator(".box-results").inner_text(), f"{name} : recherche « {word} » = {len(want)} résultat(s), comme la CLI")
+    check(page.locator(".box-read").inner_text() == read_before, f"{name} : la recherche ne lit aucun élément")
+    # Filtres : pièces jointes + « analysés seulement ».
+    page.click(".box-tools button:has-text('Filtres')")
+    page.fill(".box-search", "")
+    page.wait_for_selector(".box-results", state="detached", timeout=15000)
+    with_atts = mf_pst("ls", "--attachments", path)
+    page.select_option("select[data-keep='has_attachments']", "yes")
+    page.wait_for_selector(".box-results", timeout=15000)
+    check(f"{len(with_atts)} résultat(s)" in page.locator(".box-results").inner_text(), f"{name} : filtre « avec pièces jointes » = {len(with_atts)}, comme la CLI")
+    # Deux critères saisis coup sur coup se cumulent (nom d'expéditeur + pièces jointes).
+    sender = next((r["from_name"] for r in with_atts if r.get("from_name")), None)
+    if sender:
+        word = sender.split()[0]
+        both = mf_pst("ls", "--attachments", "--from-name", word, path)
+        page.fill("input[data-keep='from_name']", word)
+        page.press("input[data-keep='from_name']", "Enter")
+        page.wait_for_selector(f".box-results:has-text('{len(both)} résultat(s)')", timeout=15000)
+        check("Filtres (2)" in page.locator(".box-tools").first.inner_text(), f"{name} : expéditeur « {word} » + pièces jointes = {len(both)}, comme la CLI")
+        page.fill("input[data-keep='from_name']", "")
+        page.press("input[data-keep='from_name']", "Enter")
+    page.select_option("select[data-keep='has_attachments']", "")
+    page.wait_for_selector(".box-results", state="detached", timeout=15000)
+    page.click(".filter-opened summary")
+    page.check("input[data-keep='analyzed_only']")
+    page.wait_for_selector(".box-results:has-text('résultat')", timeout=15000)
+    n_read = 2 if with_att is not None else 1
+    check(f"{n_read} résultat(s)" in page.locator(".box-results").inner_text(), f"{name} : « analysés seulement » = {n_read} élément(s) ouverts")
+    check(page.locator(".box-row .verdict-pill").count() == n_read, f"{name} : verdict affiché sur les éléments analysés")
+    with page.expect_download() as dl:
+        page.click(".box-iocs button:has-text('CSV')")
+    csv = pathlib.Path(dl.value.path()).read_text(encoding="utf-8-sig")
+    check(csv.startswith("type,valeur,sources") and (csv.count("\n") <= 1 or f"{name} ›" in csv), f"{name} : indicateurs des éléments analysés exportés avec provenance")
+    page.uncheck("input[data-keep='analyzed_only']")
+    page.wait_for_selector(".box-results", state="detached", timeout=15000)
+    page.click(".box-tools button:has-text('Filtres')")
     sha = mf_pst("info", path)["hash"]["sha256"]
     page.wait_for_selector(f".box-hash[title*='{sha}']", timeout=60000)
     check(True, f"{name} : empreinte SHA-256 de la boîte identique à la CLI")

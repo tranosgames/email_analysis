@@ -2,8 +2,9 @@
 //! dossiers ; seuls les éléments ouverts par l'analyste sont lus et analysés (FR-006), une fois,
 //! puis gardés pour la session. L'empreinte de la boîte se calcule par pas bornés (FR-002).
 
+use crate::filter::Compiled;
 use crate::{Analyzed, expand_attached_messages};
-use mf_core::{EngineError, Evidence, FolderInfo, Format, ItemSummary, StoreInfo};
+use mf_core::{BoxFilter, EngineError, Evidence, FolderInfo, Format, Ioc, ItemSummary, StoreInfo};
 use mf_pst::hash::{Digests, StreamHasher};
 use mf_pst::{ByteSource, PstBox};
 use mf_sig::Keyring;
@@ -31,6 +32,8 @@ pub struct BoxSession {
     item_folder: HashMap<u32, u32>,
     /// Classe MAPI de chaque élément listé (`IPM.Note`, `IPM.Contact`…).
     item_class: HashMap<u32, String>,
+    /// Lignes des tables de dossiers déjà lues (une seule lecture par dossier).
+    rows: HashMap<u32, Vec<ItemSummary>>,
     analyzed: HashMap<u32, Analyzed>,
 }
 
@@ -50,6 +53,18 @@ pub fn is_mail(class: Option<&str>) -> bool {
     ]
     .iter()
     .any(|p| c == *p || c.starts_with(&format!("{p}.")))
+}
+
+/// Indicateurs d'un message puis de ses messages joints (« › PJ n »), ceux qui en ont.
+fn walk_iocs(m: &mf_core::Message, label: String, out: &mut Vec<(String, Vec<Ioc>)>) {
+    if !m.iocs.is_empty() {
+        out.push((label.clone(), m.iocs.clone()));
+    }
+    for a in &m.attachments {
+        if let Some(e) = &a.embedded {
+            walk_iocs(e, format!("{label} › PJ {}", a.index), out);
+        }
+    }
 }
 
 fn pst_err(e: impl std::fmt::Display) -> EngineError {
@@ -77,6 +92,7 @@ impl BoxSession {
             digests: None,
             item_folder: HashMap::new(),
             item_class: HashMap::new(),
+            rows: HashMap::new(),
             analyzed: HashMap::new(),
         })
     }
@@ -104,15 +120,109 @@ impl BoxSession {
 
     /// Lignes d'un dossier (table du dossier) ; adresse et verdict des éléments déjà ouverts.
     pub fn list(&mut self, folder: u32) -> Result<Vec<ItemSummary>, EngineError> {
-        let mut rows = self.pst.list(folder).map_err(pst_err)?;
+        self.load(folder)?;
+        let mut rows = self.rows.get(&folder).cloned().unwrap_or_default();
         for r in &mut rows {
+            self.decorate(r);
+        }
+        Ok(rows)
+    }
+
+    /// Lit la table d'un dossier une fois et la garde pour la session.
+    fn load(&mut self, folder: u32) -> Result<(), EngineError> {
+        if self.rows.contains_key(&folder) {
+            return Ok(());
+        }
+        let rows = self.pst.list(folder).map_err(pst_err)?;
+        for r in &rows {
             self.item_folder.insert(r.id, folder);
             if let Some(c) = &r.message_class {
                 self.item_class.insert(r.id, c.clone());
             }
-            self.decorate(r);
         }
-        Ok(rows)
+        self.rows.insert(folder, rows);
+        Ok(())
+    }
+
+    /// Filtre les lignes d'un dossier ou de toute la boîte (FR-007), dans l'ordre des dossiers
+    /// puis des tables. Seules les tables sont lues ; un critère sur les éléments ouverts ne
+    /// parcourt que les dossiers où des éléments ont été ouverts.
+    pub fn filter(&mut self, f: &BoxFilter) -> Result<Vec<ItemSummary>, EngineError> {
+        let folders: Vec<u32> = match f.folder {
+            Some(id) => vec![id],
+            None if f.needs_analysis() => {
+                let opened: std::collections::HashSet<u32> = self
+                    .analyzed
+                    .keys()
+                    .filter_map(|id| self.item_folder.get(id).copied())
+                    .collect();
+                self.searchable_folders()
+                    .into_iter()
+                    .filter(|id| opened.contains(id))
+                    .collect()
+            }
+            None => self.searchable_folders(),
+        };
+        let compiled = Compiled::new(f);
+        let mut out = Vec::new();
+        for folder in folders {
+            // Un dossier illisible ne bloque pas la recherche dans les autres (FR-009).
+            if self.load(folder).is_err() {
+                continue;
+            }
+            for r in self
+                .rows
+                .get(&folder)
+                .map(Vec::as_slice)
+                .unwrap_or_default()
+            {
+                let mut r = r.clone();
+                self.decorate(&mut r);
+                if compiled.matches(&r, self.analyzed.contains_key(&r.id)) {
+                    out.push(r);
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Dossiers parcourus par une recherche sur toute la boîte : tous sauf les dossiers de
+    /// recherche, dont le contenu double celui des autres.
+    fn searchable_folders(&self) -> Vec<u32> {
+        self.pst
+            .folders()
+            .iter()
+            .filter(|f| f.kind != "search")
+            .map(|f| f.id)
+            .collect()
+    }
+
+    /// Identifiants des éléments ouverts, triés.
+    pub fn analyzed_ids(&self) -> Vec<u32> {
+        let mut ids: Vec<u32> = self.analyzed.keys().copied().collect();
+        ids.sort_unstable();
+        ids
+    }
+
+    /// Indicateurs des éléments ouverts (tous, ou ceux de `ids` parmi eux), avec la provenance de
+    /// chacun (FR-013) : `(boîte › dossier › élément #id, indicateurs)`, dans l'ordre des
+    /// identifiants. Aucun élément n'est lu.
+    pub fn iocs(&self, ids: Option<&[u32]>) -> Vec<(String, Vec<Ioc>)> {
+        self.analyzed_ids()
+            .into_iter()
+            .filter(|id| ids.is_none_or(|want| want.contains(id)))
+            .filter_map(|id| {
+                let a = self.analyzed.get(&id)?;
+                let label = a.message.provenance.as_ref().map_or_else(
+                    || format!("{} › élément #{id}", self.name),
+                    |p| format!("{} › élément #{id}", p.label()),
+                );
+                let mut out = Vec::new();
+                walk_iocs(&a.message, label, &mut out);
+                Some(out)
+            })
+            .flatten()
+            .collect()
     }
 
     fn decorate(&self, r: &mut ItemSummary) {
@@ -128,16 +238,13 @@ impl BoxSession {
         if let Some(f) = self.item_folder.get(&id) {
             return Some(*f);
         }
-        let ids: Vec<u32> = self
-            .pst
-            .folders()
-            .iter()
-            .filter(|f| f.kind != "search")
-            .map(|f| f.id)
-            .collect();
+        let ids = self.searchable_folders();
         ids.into_iter().find(|f| {
-            self.list(*f)
-                .is_ok_and(|rows| rows.iter().any(|r| r.id == id))
+            self.load(*f).is_ok()
+                && self
+                    .rows
+                    .get(f)
+                    .is_some_and(|rows| rows.iter().any(|r| r.id == id))
         })
     }
 

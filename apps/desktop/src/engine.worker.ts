@@ -6,6 +6,8 @@ import init, {
   analyze,
   box_close,
   box_extract,
+  box_filter,
+  box_iocs,
   box_forget,
   box_hash_step,
   box_item,
@@ -29,6 +31,8 @@ type Job =
   | { id: number; kind: "box-open"; box: number; name: string; file: File }
   | { id: number; kind: "box-list"; box: number; folder: number }
   | { id: number; kind: "box-item"; box: number; item: number }
+  | { id: number; kind: "box-filter"; box: number; filter: string }
+  | { id: number; kind: "box-iocs"; box: number }
   | { id: number; kind: "box-report"; box: number; item: number; path: number[]; format: string; generated: string }
   | { id: number; kind: "box-extract"; box: number; item: number; path: number[]; index: number; filename: string }
   | { id: number; kind: "box-forget" }
@@ -120,6 +124,10 @@ self.onmessage = async (e: MessageEvent<Job>) => {
       scope.postMessage({ id: job.id, ok: true, json: opened });
     } else if (job.kind === "box-list") {
       scope.postMessage({ id: job.id, ok: true, json: JSON.parse(box_list(job.box, job.folder)) });
+    } else if (job.kind === "box-filter") {
+      scope.postMessage({ id: job.id, ok: true, json: JSON.parse(box_filter(job.box, job.filter)) });
+    } else if (job.kind === "box-iocs") {
+      scope.postMessage({ id: job.id, ok: true, json: JSON.parse(box_iocs(job.box)) });
     } else if (job.kind === "box-item") {
       scope.postMessage({ id: job.id, ok: true, view: JSON.parse(box_item(job.box, job.item)) });
     } else if (job.kind === "box-report") {

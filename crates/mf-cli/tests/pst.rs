@@ -107,3 +107,58 @@ fn ls_whole_box_reads_no_item_and_report_refuses_evidence_dir() {
     );
     std::fs::remove_file(&out).unwrap();
 }
+
+#[test]
+fn ls_filters_and_iocs() {
+    let f = support();
+    let count = |extra: &[&str]| -> usize {
+        let mut args = vec!["--json", "pst", "ls", &f];
+        args.extend_from_slice(extra);
+        let (code, out, err) = mf(&args);
+        assert_eq!(code, 0, "{extra:?} : {err}");
+        assert!(err.contains("éléments lus : 0") || err.is_empty(), "{err}");
+        serde_json::from_str::<Vec<serde_json::Value>>(&out)
+            .unwrap()
+            .len()
+    };
+    assert_eq!(count(&[]), 17);
+    assert_eq!(count(&["--folder", "Drafts"]), 6);
+    assert_eq!(count(&["--attachments"]), 1);
+    assert_eq!(count(&["--no-attachments"]), 16);
+    // Période : journée incluse ; 2015 = 9 éléments (voir la liste de la boîte).
+    assert_eq!(
+        count(&["--after", "2015-01-01", "--before", "2015-12-31"]),
+        9
+    );
+    assert_eq!(
+        count(&["--after", "2015-02-02", "--before", "2015-02-02"]),
+        6
+    );
+    assert_eq!(
+        count(&["--from-name", "rcs SUPPORT", "--min-size", "60000"]),
+        5
+    );
+    assert_eq!(count(&["--from-name", "personne"]), 0);
+    let (code, _, err) = mf(&["pst", "ls", &f, "--after", "hier"]);
+    assert_ne!(code, 0);
+    assert!(err.contains("AAAA-MM-JJ"));
+
+    // Indicateurs des seuls éléments désignés, avec provenance.
+    let (_, out, _) = mf(&["--json", "pst", "ls", &f, "--folder", "Drafts"]);
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&out).unwrap();
+    let ids: Vec<String> = rows.iter().take(2).map(|r| r["id"].to_string()).collect();
+    let (code, out, err) = mf(&[
+        "pst",
+        "iocs",
+        &f,
+        "--id",
+        &ids.join(","),
+        "--format",
+        "json",
+    ]);
+    assert_eq!(code, 0, "{err}");
+    assert!(err.contains("éléments lus : 2"), "{err}");
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let text = v.to_string();
+    assert!(text.contains("support.pst › Drafts › élément #"), "{text}");
+}

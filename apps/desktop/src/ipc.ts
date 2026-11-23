@@ -795,6 +795,38 @@ export async function boxList(boxId: number, folder: number): Promise<ItemSummar
   return invoke<ItemSummary[]>("box_list", { boxId, folder });
 }
 
+/** Filtre d'une boîte (FR-007) : tables de dossiers seulement, plus les éléments déjà ouverts. */
+export interface BoxFilter {
+  folder?: number | null;
+  text?: string | null;
+  from_name?: string | null;
+  to?: string | null;
+  subject?: string | null;
+  message_id?: string | null;
+  /** AAAA-MM-JJ (UTC) */
+  after?: string | null;
+  before?: string | null;
+  min_size?: number | null;
+  max_size?: number | null;
+  has_attachments?: boolean | null;
+  analyzed_only?: boolean;
+  verdict?: VerdictLevel[];
+  from_address?: string | null;
+  from_domain?: string | null;
+}
+
+/** Lignes correspondant au filtre, sans ouvrir aucun élément. */
+export async function boxFilter(boxId: number, filter: BoxFilter): Promise<ItemSummary[]> {
+  if (!inTauri) return (await boxAsk({ kind: "box-filter", box: boxId, filter: JSON.stringify(filter) })).json as ItemSummary[];
+  return invoke<ItemSummary[]>("box_filter", { boxId, filter });
+}
+
+/** Indicateurs des éléments ouverts de la boîte, avec la provenance de chacun. */
+export async function boxIocs(boxId: number): Promise<IocGroup[]> {
+  if (!inTauri) return (await boxAsk({ kind: "box-iocs", box: boxId })).json as IocGroup[];
+  return invoke<IocGroup[]>("box_iocs", { boxId });
+}
+
 /** Ouvre et analyse un élément : le seul appel qui lit un message. */
 export async function boxItem(boxId: number, id: number): Promise<MessageView> {
   if (!inTauri) return (await boxAsk({ kind: "box-item", box: boxId, item: id })).view as MessageView;

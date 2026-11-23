@@ -89,16 +89,16 @@ corpus : `tests/corpus/pst/`. Numérotation propre à la feature, préfixe `P`.
 
 ### Tests
 
-- [ ] P022 [P] [US2] `crates/mf-pst/tests/filter.rs` : filtres combinés (nom d'expéditeur, destinataire, objet, période, taille, pièces jointes, Message-ID) sur Enron 29 Mo conformes à `expected.json`, **compteur de messages lus à zéro** après filtrage de toute la boîte
-- [ ] P023 [P] [US2] `crates/mf-pst/tests/opened.rs` : ouvrir 3 éléments → seuls ces 3 sont lus (compteur à 3), leur verdict et leur adresse d'expéditeur apparaissent dans leurs `ItemSummary`, « analysés seulement » et le filtre par verdict ou domaine ne portent que sur eux, les indicateurs exportés ne viennent que d'eux ; rouvrir un élément ne le relit pas
-- [ ] P024 [P] [US2] Bench reproductible `mf pst bench` : temps d'arborescence, de liste du plus gros dossier, de filtre de toute la boîte et d'ouverture d'un message, octets lus ; seuils de SC-003 et SC-005 vérifiés sur Enron 29 Mo
+- [x] P022 [P] [US2] `crates/mf-pst/tests/filter.rs` : filtres combinés (nom d'expéditeur, destinataire, objet, période, taille, pièces jointes, Message-ID) sur Enron 29 Mo conformes à `expected.json`, **compteur de messages lus à zéro** après filtrage de toute la boîte — *`crates/mf-engine/tests/filter.rs` : support.pst et Enron, comparés à un filtrage indépendant et aux comptes libpff ; 0 élément lu*
+- [x] P023 [P] [US2] `crates/mf-pst/tests/opened.rs` : ouvrir 3 éléments → seuls ces 3 sont lus (compteur à 3), leur verdict et leur adresse d'expéditeur apparaissent dans leurs `ItemSummary`, « analysés seulement » et le filtre par verdict ou domaine ne portent que sur eux, les indicateurs exportés ne viennent que d'eux ; rouvrir un élément ne le relit pas — *`opened_items_only` (même fichier) ; indicateurs avec provenance, messages joints compris*
+- [x] P024 [P] [US2] Bench reproductible `mf pst bench` : temps d'arborescence, de liste du plus gros dossier, de filtre de toute la boîte et d'ouverture d'un message, octets lus ; seuils de SC-003 et SC-005 vérifiés sur Enron 29 Mo — *`mf pst bench` : filtre de toute la boîte à froid et à chaud ; Enron 29 Mo : 65 ms à froid, 0,7 ms ensuite, 0 lu*
 
 ### Implementation
 
-- [ ] P025 [US2] `crates/mf-pst/src/index.rs` : `BoxIndex` — tables de dossiers lues à la demande et gardées, filtre linéaire (`BoxFilter`), cache des éléments ouverts (`Analyzed`), `iocs()` fusionnés avec provenances
-- [ ] P026 [US2] Compteur des messages lus exposé par la session (tests, CLI `info`, interface « 3 messages lus sur 2 178 ») : preuve que rien d'autre n'est lu (FR-006)
-- [ ] P027 [US2] CLI : filtres de `mf pst ls`, `mf pst iocs --id`
-- [ ] P028 [US2] Tauri + interface : barre de filtres (dossier ou toute la boîte), tri des colonnes, pastille de verdict sur les messages ouverts, « analysés seulement », export des indicateurs des messages analysés
+- [x] P025 [US2] `crates/mf-pst/src/index.rs` : `BoxIndex` — tables de dossiers lues à la demande et gardées, filtre linéaire (`BoxFilter`), cache des éléments ouverts (`Analyzed`), `iocs()` fusionnés avec provenances — *dans `crates/mf-engine/src/{filter.rs,mailbox.rs}` (tables gardées par dossier, `BoxFilter` en ET, mots sans casse ni accents, `iocs()`) plutôt que `mf-pst/src/index.rs`*
+- [x] P026 [US2] Compteur des messages lus exposé par la session (tests, CLI `info`, interface « 3 messages lus sur 2 178 ») : preuve que rien d'autre n'est lu (FR-006) — *`items_read` (CLI `info`, `ls`, `iocs`) ; interface « N élément(s) lu(s) sur M »*
+- [x] P027 [US2] CLI : filtres de `mf pst ls`, `mf pst iocs --id` — *`mf pst ls --text --from-name --to --subject --message-id --after --before --min-size --max-size --attachments/--no-attachments`, `mf pst iocs --id`*
+- [x] P028 [US2] Tauri + interface : barre de filtres (dossier ou toute la boîte), tri des colonnes, pastille de verdict sur les messages ouverts, « analysés seulement », export des indicateurs des messages analysés — *bureau et web : recherche, panneau de filtres (portée dossier ou boîte), tri, verdict dans la liste, « analysés seulement », export CSV/JSON ; e2e web comparé à la CLI*
 - [ ] P029 [US2] Profiler l'analyse complète d'un message (coût fixe de 3 à 4 ms mesuré) et supprimer les initialisations répétées (nettoyeur HTML, expressions, tables) — non bloquant
 
 **Checkpoint**: US1 et US2 complètes sur le bureau et en CLI ; aucun message lu sans clic
@@ -126,8 +126,8 @@ corpus : `tests/corpus/pst/`. Numérotation propre à la feature, préfixe `P`.
 
 **Goal**: lire les OST à pages de 4 Ko (R3).
 
-- [ ] P034 Test : P005 étendu aux 3 OST du corpus (doit échouer)
-- [ ] P035 `vendor/outlook-pst` : en-tête OST (magic `SO`), taille de page paramétrée par le type de fichier, tailles de blocs, décompression des blocs (`flate2`) ; consigner dans `NOTICE.md`
+- [x] P034 Test : P005 étendu aux 3 OST du corpus (doit échouer) — *fait avec le lecteur intégré : les 4 OST du corpus sont comparés à libpff (`counts_match_libpff`)*
+- [x] P035 `vendor/outlook-pst` : en-tête OST (magic `SO`), taille de page paramétrée par le type de fichier, tailles de blocs, décompression des blocs (`flate2`) ; consigner dans `NOTICE.md` — *apporté par les correctifs `outlook-pst-ost` intégrés dans `vendor/outlook-pst` (voir `NOTICE.md`)*
 - [ ] P036 Repli : si la lecture d'un OST échoue, message explicite « format non pris en charge » sans bloquer le reste (FR-009) ; test sur un OST tronqué
 
 **Checkpoint**: P005 vert pour tous les PST et OST

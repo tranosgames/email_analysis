@@ -710,12 +710,27 @@ enum PstCmd {
     },
     /// Arborescence des dossiers avec leurs compteurs (tables de hiérarchie seulement).
     Tree { file: PathBuf },
-    /// Lignes d'un dossier, lues dans sa table, sans ouvrir les éléments.
+    /// Lignes d'un dossier ou de toute la boîte, lues dans les tables, sans ouvrir les éléments ;
+    /// filtres combinés en ET, sans tenir compte de la casse ni des accents.
     Ls {
         file: PathBuf,
         /// Identifiant ou chemin du dossier (« bailey-s/Inbox ») ; par défaut toute la boîte.
         #[arg(long)]
         folder: Option<String>,
+        #[command(flatten)]
+        filter: BoxFilterArgs,
+    },
+    /// Indicateurs d'éléments désignés (ouverts et analysés), fusionnés avec leur provenance.
+    Iocs {
+        file: PathBuf,
+        /// Identifiants séparés par des virgules (voir `mf pst ls`).
+        #[arg(long, value_delimiter = ',', required = true)]
+        id: Vec<u32>,
+        /// csv ou json
+        #[arg(long, default_value = "csv")]
+        format: String,
+        #[arg(long)]
+        defang: bool,
     },
     /// Élément complet, comme `mf show`, avec sa provenance.
     Show {
@@ -737,6 +752,72 @@ enum PstCmd {
     },
     /// Mesures : temps d'ouverture, de liste, d'ouverture d'élément, octets lus.
     Bench { file: PathBuf },
+}
+
+/// Filtres de `mf pst ls` (FR-007) : colonnes des tables de dossiers.
+#[derive(clap::Args, Debug, Default)]
+struct BoxFilterArgs {
+    /// Mots cherchés dans l'objet, l'expéditeur et les destinataires.
+    #[arg(long)]
+    text: Option<String>,
+    /// Nom affiché de l'expéditeur (l'adresse n'est pas dans les tables).
+    #[arg(long)]
+    from_name: Option<String>,
+    /// Destinataire (À ou Cc).
+    #[arg(long)]
+    to: Option<String>,
+    #[arg(long)]
+    subject: Option<String>,
+    #[arg(long)]
+    message_id: Option<String>,
+    /// Date de réception (sinon d'envoi) au plus tôt : AAAA-MM-JJ, UTC.
+    #[arg(long)]
+    after: Option<String>,
+    /// Date au plus tard, journée incluse : AAAA-MM-JJ.
+    #[arg(long)]
+    before: Option<String>,
+    /// Taille minimale en octets.
+    #[arg(long)]
+    min_size: Option<u32>,
+    #[arg(long)]
+    max_size: Option<u32>,
+    /// Seulement les éléments avec pièces jointes.
+    #[arg(long, conflicts_with = "no_attachments")]
+    attachments: bool,
+    /// Seulement les éléments sans pièce jointe.
+    #[arg(long)]
+    no_attachments: bool,
+}
+
+impl BoxFilterArgs {
+    fn to_filter(&self, folder: Option<u32>) -> Result<mf_core::BoxFilter, String> {
+        for (name, v) in [("--after", &self.after), ("--before", &self.before)] {
+            if let Some(d) = v {
+                let ok = d.len() >= 4 && d.chars().take(10).all(|c| c.is_ascii_digit() || c == '-');
+                if !ok {
+                    return Err(format!("{name} {d} : date AAAA-MM-JJ attendue"));
+                }
+            }
+        }
+        Ok(mf_core::BoxFilter {
+            folder,
+            text: self.text.clone(),
+            from_name: self.from_name.clone(),
+            to: self.to.clone(),
+            subject: self.subject.clone(),
+            message_id: self.message_id.clone(),
+            after: self.after.clone(),
+            before: self.before.clone(),
+            min_size: self.min_size,
+            max_size: self.max_size,
+            has_attachments: match (self.attachments, self.no_attachments) {
+                (true, _) => Some(true),
+                (_, true) => Some(false),
+                _ => None,
+            },
+            ..Default::default()
+        })
+    }
 }
 
 /// Dossiers désignés par `--folder` (identifiant ou chemin), ou tous les dossiers non virtuels.
@@ -873,12 +954,19 @@ fn pst_cmd(cmd: PstCmd, json: bool, keys: &mf_engine::Keyring) -> Result<(), Str
                 );
             }
         }
-        PstCmd::Ls { file, folder } => {
+        PstCmd::Ls {
+            file,
+            folder,
+            filter,
+        } => {
             let mut s = open(&file)?;
-            let mut rows = Vec::new();
-            for f in pick_folders(&s, &folder)? {
-                rows.extend(s.list(f).map_err(|e| e.to_string())?);
-            }
+            let folder = match folder {
+                Some(_) => pick_folders(&s, &folder)?.first().copied(),
+                None => None,
+            };
+            let rows = s
+                .filter(&filter.to_filter(folder)?)
+                .map_err(|e| e.to_string())?;
             if json {
                 return print(&rows);
             }
@@ -963,6 +1051,29 @@ fn pst_cmd(cmd: PstCmd, json: bool, keys: &mf_engine::Keyring) -> Result<(), Str
                 a.message.findings.len()
             );
         }
+        PstCmd::Iocs {
+            file,
+            id,
+            format,
+            defang,
+        } => {
+            let mut s = open(&file)?;
+            for i in &id {
+                s.open_item(*i, keys)
+                    .map_err(|e| format!("élément #{i} : {e}"))?;
+            }
+            let groups: Vec<mf_report::IocGroup> = s
+                .iocs(Some(&id))
+                .into_iter()
+                .map(|(source, iocs)| mf_report::IocGroup { source, iocs })
+                .collect();
+            match format.as_str() {
+                "csv" => print!("{}", mf_report::iocs_csv(&groups, defang)),
+                "json" => println!("{}", mf_report::iocs_json(&groups, defang)),
+                other => return Err(format!("--format {other} : csv ou json attendu")),
+            }
+            eprintln!("éléments lus : {}", s.items_read());
+        }
         PstCmd::Bench { file } => {
             let t = std::time::Instant::now();
             let mut s = open(&file)?;
@@ -991,6 +1102,20 @@ fn pst_cmd(cmd: PstCmd, json: bool, keys: &mf_engine::Keyring) -> Result<(), Str
                 s.open_item(r.id, keys).map_err(|e| e.to_string())?;
             }
             let item_ms = t.elapsed().as_secs_f64() * 1e3;
+            // Filtre de toute la boîte (SC-005) : à froid (tables à lire) puis tables en mémoire.
+            let probe = mf_core::BoxFilter {
+                from_name: Some("a".into()),
+                has_attachments: Some(true),
+                ..Default::default()
+            };
+            let mut cold = open(&file)?;
+            let t = std::time::Instant::now();
+            let matched = cold.filter(&probe).map_err(|e| e.to_string())?.len();
+            let filter_cold_ms = t.elapsed().as_secs_f64() * 1e3;
+            let t = std::time::Instant::now();
+            cold.filter(&probe).map_err(|e| e.to_string())?;
+            let filter_warm_ms = t.elapsed().as_secs_f64() * 1e3;
+            let filter_read = cold.items_read();
             let (pages, bytes) = s.read_stats();
             let t = std::time::Instant::now();
             s.hash_all().map_err(|e| e.to_string())?;
@@ -1000,6 +1125,8 @@ fn pst_cmd(cmd: PstCmd, json: bool, keys: &mf_engine::Keyring) -> Result<(), Str
                 "open_ms": open_ms, "open_bytes_read": bytes_open, "open_page_reads": pages_open,
                 "list_largest_folder_ms": list_ms, "list_largest_folder_items": rows.len(),
                 "list_whole_box_ms": all_ms, "open_one_item_ms": item_ms,
+                "filter_whole_box_cold_ms": filter_cold_ms, "filter_whole_box_warm_ms": filter_warm_ms,
+                "filter_matched": matched, "filter_items_read": filter_read,
                 "page_reads": pages, "bytes_read": bytes, "items_read": s.items_read(), "hash_ms": hash_ms,
             });
             if json {
@@ -1012,6 +1139,9 @@ fn pst_cmd(cmd: PstCmd, json: bool, keys: &mf_engine::Keyring) -> Result<(), Str
                 bytes_open as f64 / 1e6,
                 rows.len(),
                 s.items_read()
+            );
+            println!(
+                "filtre de toute la boîte : {matched} résultat(s), {filter_cold_ms:.1} ms à froid, {filter_warm_ms:.1} ms ensuite, {filter_read} élément lu (SC-005 : < 1 000 ms, 0 lu)"
             );
         }
     }

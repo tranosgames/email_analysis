@@ -88,7 +88,14 @@ every report. The mailbox is opened read-only and never loaded into memory as a 
 multi-gigabyte mailbox opens in milliseconds. Unicode and ANSI PST, Outlook 2013+ OST. Contacts,
 appointments and tasks are shown without a verdict.
 
+**Find a message without reading them all.** Search and filter a folder or the whole mailbox by
+sender name, recipient, subject, date range, size, attachments or Message-ID — using only the folder
+tables, so not a single message is opened. Once you have opened a few, filter them by verdict or
+sender domain, and export their indicators in one file, each with its provenance.
+
 ![A PST mailbox: folder tree, folder list and an opened message with its provenance](docs/apercu-pst.png)
+
+![Filtering a whole mailbox by sender and attachments: 25 results, nothing read but the clicked message](docs/apercu-pst-filtres.png)
 
 ### Reporting
 
@@ -159,8 +166,11 @@ Mailboxes have their own commands, which only read what you ask for:
 mf pst info mailbox.pst                          # format, folders, items, hash
 mf pst tree mailbox.pst                          # folder tree with counts
 mf pst ls mailbox.pst --folder "Inbox"           # rows of a folder (from the folder table)
+mf pst ls mailbox.pst --from-name bailey --attachments --after 2001-05-01
+                                                 # filter the whole mailbox, nothing opened
 mf pst show mailbox.pst --id 2097220 --headers   # read and analyse a single item
 mf pst report mailbox.pst --id 2097220 --out r.html
+mf pst iocs mailbox.pst --id 2097220,2097252 --defang   # indicators of chosen items
 ```
 
 Every command accepts `--json`.
@@ -234,7 +244,7 @@ then a plan and tasks checked off as they are implemented.
 
 ## Roadmap
 
-- **Mailboxes, continued**: filters on folder columns, export of analysed items.
+- **Mailboxes, continued**: export of items as `.msg` / `.eml` with a manifest.
 - **Team lists**: the organisation's legitimate domains, imported block lists, in-house rules taken
   into account by the verdict.
 - Contents of archives and Office documents.

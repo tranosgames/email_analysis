@@ -1,7 +1,34 @@
 // État de la session (même rôle que MessageHandler.js de msg-reader) :
 // liste des preuves, sélection, épingles, message embarqué courant, en-têtes dépliés.
 
-import type { BoxHash, FolderInfo, ItemSummary, OpenResult, StoreInfo, Summary } from "./ipc";
+import type { BoxFilter, BoxHash, FolderInfo, ItemSummary, OpenResult, StoreInfo, Summary } from "./ipc";
+
+/** Tri de la liste d'une boîte (FR-007). */
+export type BoxSort = "date-desc" | "date-asc" | "from" | "subject" | "size-desc";
+
+const dateOf = (r: ItemSummary) => r.received ?? r.sent ?? "";
+const textOf = (v: string | null | undefined) => (v ?? "").trim().toLocaleLowerCase("fr");
+
+export function sortRows(rows: ItemSummary[], sort: BoxSort): ItemSummary[] {
+  const out = [...rows];
+  const by: Record<BoxSort, (a: ItemSummary, b: ItemSummary) => number> = {
+    "date-desc": (a, b) => dateOf(b).localeCompare(dateOf(a)),
+    "date-asc": (a, b) => dateOf(a).localeCompare(dateOf(b)),
+    from: (a, b) => textOf(a.from_address ?? a.from_name).localeCompare(textOf(b.from_address ?? b.from_name), "fr") || dateOf(b).localeCompare(dateOf(a)),
+    subject: (a, b) => textOf(a.subject).localeCompare(textOf(b.subject), "fr") || dateOf(b).localeCompare(dateOf(a)),
+    "size-desc": (a, b) => (b.size ?? 0) - (a.size ?? 0),
+  };
+  return out.sort(by[sort]);
+}
+
+/** Nombre de critères renseignés (hors portée). */
+export function filterCount(f: BoxFilter): number {
+  return Object.entries(f).filter(([k, v]) => {
+    if (k === "folder") return false;
+    if (Array.isArray(v)) return v.length > 0;
+    return v !== null && v !== undefined && v !== "" && v !== false;
+  }).length;
+}
 
 /** Boîte PST/OST ouverte : arborescence connue, lignes des dossiers chargées à la demande. */
 export interface BoxState {
@@ -11,6 +38,13 @@ export interface BoxState {
   folders: FolderInfo[];
   hash: BoxHash | null;
   rows: Map<number, ItemSummary[]>;
+  /** Éléments ouverts pendant la session (seuls lus, FR-006). */
+  analyzed: Set<number>;
+  sort: BoxSort;
+  /** Critères saisis ; `folder` : portée (null = toute la boîte). */
+  filter: BoxFilter;
+  /** Résultat du filtre affiché, ou null si aucun filtre n'est appliqué. */
+  results: ItemSummary[] | null;
 }
 
 /** Ce que montre le panneau de gauche. */
@@ -56,7 +90,18 @@ export class MessageHandler {
         this.items.push(r.summary);
         added++;
       } else if (r.kind === "mailbox") {
-        this.boxes.push({ boxId: r.box_id, path: r.path, store: r.store, folders: r.folders, hash: null, rows: new Map() });
+        this.boxes.push({
+          boxId: r.box_id,
+          path: r.path,
+          store: r.store,
+          folders: r.folders,
+          hash: null,
+          rows: new Map(),
+          analyzed: new Set(),
+          sort: "date-desc",
+          filter: {},
+          results: null,
+        });
         boxes++;
       } else if (r.kind === "duplicate") dup++;
       else this.failed.push({ path: r.path, error: r.error });
@@ -116,8 +161,48 @@ export class MessageHandler {
   }
 
   back(): void {
-    if (this.view.kind === "box" && this.view.folder !== null) this.view = { ...this.view, folder: null };
+    const b = this.view.kind === "box" ? this.box(this.view.boxId) : undefined;
+    if (b?.results) b.results = null;
+    else if (this.view.kind === "box" && this.view.folder !== null) this.view = { ...this.view, folder: null };
     else this.view = { kind: "files" };
+    this.emit();
+  }
+
+  /** Nouveau trousseau : les éléments des boîtes seront ré-analysés à leur prochaine ouverture. */
+  forgetBoxAnalyses(): void {
+    for (const b of this.boxes) {
+      b.analyzed.clear();
+      for (const rows of [...b.rows.values(), b.results ?? []]) {
+        for (const r of rows) {
+          r.verdict = null;
+          r.from_address = null;
+        }
+      }
+    }
+  }
+
+  /** Lignes affichées dans la liste de la boîte, dans l'ordre de tri choisi. */
+  visibleRows(boxId: number): ItemSummary[] {
+    const b = this.box(boxId);
+    if (!b || this.view.kind !== "box" || this.view.boxId !== boxId) return [];
+    if (b.results) return sortRows(b.results, b.sort);
+    if (this.view.folder === null) return [];
+    return sortRows(b.rows.get(this.view.folder) ?? [], b.sort);
+  }
+
+  setSort(boxId: number, sort: BoxSort): void {
+    const b = this.box(boxId);
+    if (!b || b.sort === sort) return;
+    b.sort = sort;
+    this.emit();
+  }
+
+  /** Résultat d'un filtre (null : retour à la navigation par dossier). */
+  setResults(boxId: number, filter: BoxFilter, results: ItemSummary[] | null): void {
+    const b = this.box(boxId);
+    if (!b) return;
+    b.filter = filter;
+    b.results = results;
     this.emit();
   }
 
@@ -137,8 +222,9 @@ export class MessageHandler {
   markAnalyzed(boxId: number, id: number, verdict: ItemSummary["verdict"], fromAddress: string | null): void {
     const b = this.box(boxId);
     if (!b) return;
-    let changed = false;
-    for (const rows of b.rows.values()) {
+    let changed = !b.analyzed.has(id);
+    b.analyzed.add(id);
+    for (const rows of [...b.rows.values(), b.results ?? []]) {
       for (const r of rows) {
         if (r.id === id && (r.verdict !== verdict || r.from_address !== fromAddress)) {
           r.verdict = verdict;
@@ -161,16 +247,12 @@ export class MessageHandler {
 
   /** Nombre d'éléments ouverts (donc lus) dans une boîte. */
   analyzedCount(boxId: number): number {
-    const b = this.box(boxId);
-    if (!b) return 0;
-    const seen = new Set<number>();
-    for (const rows of b.rows.values()) for (const r of rows) if (r.verdict) seen.add(r.id);
-    return seen.size;
+    return this.box(boxId)?.analyzed.size ?? 0;
   }
 
   move(delta: number): void {
-    if (this.view.kind === "box" && this.view.folder !== null) {
-      const rows = this.box(this.view.boxId)?.rows.get(this.view.folder) ?? [];
+    if (this.view.kind === "box") {
+      const rows = this.visibleRows(this.view.boxId);
       if (!rows.length) return;
       const cur = this.selectedBoxItem;
       const i = cur ? rows.findIndex((r) => r.id === cur.id) : -1;

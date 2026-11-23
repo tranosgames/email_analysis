@@ -2,6 +2,8 @@
 
 import { formatDate, h, humanSize, toast } from "./dom";
 import {
+  boxFilter,
+  boxIocs,
   boxItem,
   boxList,
   boxReport,
@@ -23,12 +25,14 @@ import {
   type FolderInfo,
   type ItemSummary,
   type BoxHash,
+  type BoxFilter,
+  type VerdictLevel,
   type Attachment,
   type IocGroup,
   type Message,
   type MessageView,
 } from "./ipc";
-import type { BoxState, MessageHandler } from "./MessageHandler";
+import { filterCount, type BoxSort, type BoxState, type MessageHandler } from "./MessageHandler";
 import { renderReading, type Crumb } from "./views/reading";
 
 /** Hauteur fixe d'une ligne de la liste virtualisée (px), alignée sur `.box-row`. */
@@ -70,6 +74,13 @@ export class UIManager {
   private listSel = "";
   /** Dossiers repliés de l'arborescence : clé `boîte:dossier`. */
   private collapsed = new Set<string>();
+  /** Boîtes dont le panneau de filtres est déplié. */
+  private filtersOpen = new Set<number>();
+  private searchTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Numéro du dernier filtre lancé : une réponse plus ancienne est ignorée. */
+  private filterSeq = 0;
+  /** Critères saisis, à jour immédiatement (le résultat du moteur arrive après). */
+  private drafts = new Map<number, BoxFilter>();
   private renderToken = 0;
   private lastKey = "";
 
@@ -92,7 +103,27 @@ export class UIManager {
     this.list.classList.toggle("in-box", s.view.kind === "box");
     if (s.view.kind === "box") {
       const b = s.box(s.view.boxId);
-      if (b) return this.renderBox(b, s.view.folder);
+      if (b) {
+        // La saisie en cours (recherche, filtres) survit au redessin de la liste.
+        const active = document.activeElement as HTMLInputElement | null;
+        const keep = active && this.list.contains(active) ? active.dataset.keep : undefined;
+        const caret = keep && typeof active?.selectionStart === "number" ? [active.selectionStart, active.selectionEnd ?? active.selectionStart] : null;
+        this.renderBox(b, s.view.folder);
+        if (keep) {
+          const el = this.list.querySelector<HTMLInputElement>(`[data-keep="${keep}"]`);
+          if (el) {
+            el.focus();
+            if (caret && "setSelectionRange" in el) {
+              try {
+                el.setSelectionRange(caret[0], caret[1]);
+              } catch {
+                /* champ sans curseur (date, liste) */
+              }
+            }
+          }
+        }
+        return;
+      }
     }
     this.list.replaceChildren(
       ...s.boxes.map((b) =>
@@ -173,12 +204,12 @@ export class UIManager {
     const read = s.analyzedCount(b.boxId);
     return h(
       "li",
-      { class: "box-head" },
+      { class: `box-head${this.filtersOpen.has(b.boxId) ? " filters-open" : ""}` },
       h(
         "div",
         { class: "box-nav" },
-        h("button", { class: "btn btn-small box-back", type: "button", onclick: () => s.back() }, folder ? "‹ Dossiers" : "‹ Fichiers"),
-        h("strong", { class: "box-title", title: b.path }, folder ? folder.name || "Boîte" : b.store.display_name || b.store.name),
+        h("button", { class: "btn btn-small box-back", type: "button", onclick: () => s.back() }, b.results ? (folder ? "‹ Dossier" : "‹ Dossiers") : folder ? "‹ Dossiers" : "‹ Fichiers"),
+        h("strong", { class: "box-title", title: b.path }, b.results ? "Recherche" : folder ? folder.name || "Boîte" : b.store.display_name || b.store.name),
       ),
       h(
         "div",
@@ -192,6 +223,7 @@ export class UIManager {
         b.hash?.sha256 ? `SHA-256 ${b.hash.sha256.slice(0, 16)}…` : `Empreinte : ${pct} %`,
       ),
       h("div", { class: "box-meta box-read" }, `${read} élément(s) lu(s) sur ${b.store.items} — seuls les éléments ouverts sont lus`),
+      ...this.boxTools(b, folder),
       b.store.unreadable.length
         ? h(
             "details",
@@ -207,8 +239,270 @@ export class UIManager {
     );
   }
 
+  /** Recherche, filtres (FR-007), tri et export des indicateurs des éléments analysés. */
+  private boxTools(b: BoxState, folder: FolderInfo | null): HTMLElement[] {
+    const f = this.drafts.get(b.boxId) ?? b.filter;
+    const n = filterCount(f);
+    const open = this.filtersOpen.has(b.boxId);
+    const set = (patch: Partial<BoxFilter>) => {
+      // Deux critères saisis coup sur coup se cumulent, même si le premier résultat n'est pas arrivé.
+      const next = { ...(this.drafts.get(b.boxId) ?? b.filter), ...patch };
+      this.drafts.set(b.boxId, next);
+      void this.applyFilter(b, next, folder);
+    };
+    const text = (key: keyof BoxFilter, label: string, placeholder = "") =>
+      h(
+        "label",
+        { class: "filter-field" },
+        h("span", {}, label),
+        h("input", {
+          type: "text",
+          "data-keep": key,
+          value: (f[key] as string | null | undefined) ?? "",
+          placeholder,
+          onchange: (e: Event) => set({ [key]: (e.target as HTMLInputElement).value.trim() || null }),
+        }),
+      );
+    const date = (key: "after" | "before", label: string) =>
+      h(
+        "label",
+        { class: "filter-field" },
+        h("span", {}, label),
+        h("input", { type: "date", "data-keep": key, value: f[key] ?? "", onchange: (e: Event) => set({ [key]: (e.target as HTMLInputElement).value || null }) }),
+      );
+    const kb = (key: "min_size" | "max_size", label: string) =>
+      h(
+        "label",
+        { class: "filter-field" },
+        h("span", {}, label),
+        h("input", {
+          type: "number",
+          min: "0",
+          step: "1",
+          "data-keep": key,
+          value: f[key] ? String(Math.round((f[key] as number) / 1024)) : "",
+          onchange: (e: Event) => {
+            const v = Number((e.target as HTMLInputElement).value);
+            set({ [key]: v > 0 ? Math.round(v * 1024) : null });
+          },
+        }),
+      );
+    const verdicts: [VerdictLevel, string][] = [
+      ["malicious", "Malveillant"],
+      ["suspicious", "À vérifier"],
+      ["legitimate", "Légitime"],
+    ];
+    const out: HTMLElement[] = [
+      h(
+        "div",
+        { class: "box-tools" },
+        h("input", {
+          type: "search",
+          class: "box-search",
+          "data-keep": "text",
+          "aria-label": "Rechercher dans la boîte",
+          placeholder: folder && f.folder === folder.id ? `Rechercher dans ${folder.name}` : "Rechercher : objet, expéditeur, destinataires",
+          value: f.text ?? "",
+          oninput: (e: Event) => {
+            const v = (e.target as HTMLInputElement).value;
+            clearTimeout(this.searchTimer);
+            this.searchTimer = setTimeout(() => set({ text: v.trim() || null }), 250);
+          },
+        }),
+        h(
+          "button",
+          {
+            class: `btn btn-small${n ? " active" : ""}`,
+            type: "button",
+            "aria-expanded": String(open),
+            onclick: () => {
+              if (!this.filtersOpen.delete(b.boxId)) this.filtersOpen.add(b.boxId);
+              this.renderList();
+            },
+          },
+          n ? `Filtres (${n})` : "Filtres",
+        ),
+      ),
+    ];
+    if (open) {
+      out.push(
+        h(
+          "div",
+          { class: "box-filters" },
+          folder
+            ? h(
+                "label",
+                { class: "filter-field wide" },
+                h("span", {}, "Portée"),
+                h(
+                  "select",
+                  { "data-keep": "scope", onchange: (e: Event) => set({ folder: (e.target as HTMLSelectElement).value === "folder" ? folder.id : null }) },
+                  h("option", { value: "box", selected: f.folder !== folder.id }, "Toute la boîte"),
+                  h("option", { value: "folder", selected: f.folder === folder.id }, `Ce dossier (${folder.name})`),
+                ),
+              )
+            : null,
+          text("from_name", "Expéditeur (nom)"),
+          text("to", "Destinataire"),
+          text("subject", "Objet"),
+          text("message_id", "Message-ID"),
+          date("after", "Du"),
+          date("before", "Au"),
+          kb("min_size", "Taille min. (Ko)"),
+          kb("max_size", "Taille max. (Ko)"),
+          h(
+            "label",
+            { class: "filter-field" },
+            h("span", {}, "Pièces jointes"),
+            h(
+              "select",
+              {
+                "data-keep": "has_attachments",
+                onchange: (e: Event) => {
+                  const v = (e.target as HTMLSelectElement).value;
+                  set({ has_attachments: v === "yes" ? true : v === "no" ? false : null });
+                },
+              },
+              h("option", { value: "", selected: f.has_attachments == null }, "Indifférent"),
+              h("option", { value: "yes", selected: f.has_attachments === true }, "Avec"),
+              h("option", { value: "no", selected: f.has_attachments === false }, "Sans"),
+            ),
+          ),
+          h(
+            "details",
+            { class: "filter-opened", open: !!(f.analyzed_only || f.verdict?.length || f.from_address || f.from_domain) },
+            h("summary", {}, "Éléments déjà analysés : verdict, adresse"),
+            h(
+              "label",
+              { class: "filter-check" },
+              h("input", { type: "checkbox", "data-keep": "analyzed_only", checked: !!f.analyzed_only, onchange: (e: Event) => set({ analyzed_only: (e.target as HTMLInputElement).checked }) }),
+              "Analysés seulement",
+            ),
+            ...verdicts.map(([v, label]) =>
+              h(
+                "label",
+                { class: "filter-check" },
+                h("input", {
+                  type: "checkbox",
+                  "data-keep": `verdict-${v}`,
+                  checked: (f.verdict ?? []).includes(v),
+                  onchange: (e: Event) => {
+                    const cur = new Set((this.drafts.get(b.boxId) ?? b.filter).verdict ?? []);
+                    if ((e.target as HTMLInputElement).checked) cur.add(v);
+                    else cur.delete(v);
+                    set({ verdict: [...cur] });
+                  },
+                }),
+                h("span", { class: `verdict-pill v-${v}` }, label),
+              ),
+            ),
+            text("from_address", "Adresse de l'expéditeur"),
+            text("from_domain", "Domaine de l'expéditeur", "exemple.com"),
+            h("p", { class: "filter-note" }, "L'adresse et le verdict ne sont connus que pour les éléments ouverts : les tables des dossiers ne contiennent que le nom affiché."),
+          ),
+          n
+            ? h("button", { class: "btn btn-small", type: "button", onclick: () => set({ text: null, from_name: null, to: null, subject: null, message_id: null, after: null, before: null, min_size: null, max_size: null, has_attachments: null, analyzed_only: false, verdict: [], from_address: null, from_domain: null }) }, "Effacer les filtres")
+            : null,
+        ),
+      );
+    }
+    const showsRows = b.results !== null || folder !== null;
+    const analyzed = this.state.analyzedCount(b.boxId);
+    if (showsRows || analyzed) {
+      const sorts: [BoxSort, string][] = [
+        ["date-desc", "Plus récents"],
+        ["date-asc", "Plus anciens"],
+        ["from", "Expéditeur"],
+        ["subject", "Objet"],
+        ["size-desc", "Taille"],
+      ];
+      out.push(
+        h(
+          "div",
+          { class: "box-tools box-tools-2" },
+          showsRows
+            ? h(
+                "label",
+                { class: "box-sort" },
+                "Trier : ",
+                h(
+                  "select",
+                  { "data-keep": "sort", onchange: (e: Event) => this.state.setSort(b.boxId, (e.target as HTMLSelectElement).value as BoxSort) },
+                  ...sorts.map(([v, label]) => h("option", { value: v, selected: b.sort === v }, label)),
+                ),
+              )
+            : null,
+          analyzed
+            ? h(
+                "span",
+                { class: "box-iocs" },
+                `Indicateurs des ${analyzed} analysé(s) : `,
+                h("button", { class: "btn btn-small", type: "button", onclick: () => void this.exportBoxIocs(b, "csv") }, "CSV"),
+                h("button", { class: "btn btn-small", type: "button", onclick: () => void this.exportBoxIocs(b, "json") }, "JSON"),
+              )
+            : null,
+        ),
+      );
+    }
+    if (b.results) {
+      const scope = b.filter.folder != null ? (b.folders.find((x) => x.id === b.filter.folder)?.name ?? "dossier") : "toute la boîte";
+      out.push(
+        h(
+          "div",
+          { class: "box-meta box-results", role: "status" },
+          `${b.results.length} résultat(s) — ${scope}, tables des dossiers seulement`,
+        ),
+      );
+    }
+    return out;
+  }
+
+  /** Lance le filtre dans le moteur ; sans critère, revient à la navigation par dossier. */
+  private async applyFilter(b: BoxState, f: BoxFilter, folder: FolderInfo | null): Promise<void> {
+    const seq = ++this.filterSeq;
+    const scope = folder && f.folder === folder.id ? folder.id : null;
+    const filter: BoxFilter = { ...f, folder: scope };
+    if (!filterCount(filter)) {
+      this.state.setResults(b.boxId, filter, null);
+      return;
+    }
+    try {
+      const rows = await boxFilter(b.boxId, filter);
+      if (seq !== this.filterSeq) return;
+      this.list.scrollTop = 0;
+      this.state.setResults(b.boxId, filter, rows);
+    } catch (e) {
+      toast(`Recherche impossible : ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  private async exportBoxIocs(b: BoxState, format: "csv" | "json"): Promise<void> {
+    try {
+      const groups = await boxIocs(b.boxId);
+      if (!groups.length) {
+        toast("Aucun indicateur dans les éléments analysés.");
+        return;
+      }
+      const text = await exportIocs(groups, format, false);
+      const base = b.store.name.replace(/\.[^.]+$/, "").replace(/[^\p{L}\p{N}_-]+/gu, "_").slice(0, 40);
+      const saved = await saveText(text, `indicateurs_${base}.${format}`, format === "csv" ? "text/csv" : "application/json");
+      if (saved) toast(`Indicateurs enregistrés : ${saved}`);
+    } catch (e) {
+      toast(`Export impossible : ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   private renderBox(b: BoxState, folderId: number | null): void {
     const folder = folderId === null ? null : (b.folders.find((f) => f.id === folderId) ?? null);
+    if (b.results) {
+      const head = this.boxHead(b, folder);
+      if (!b.results.length) {
+        this.listKey = "";
+        this.list.replaceChildren(head, h("li", { class: "box-meta none" }, "Aucun élément ne correspond."));
+        return;
+      }
+      return this.renderRows(b, head, this.state.visibleRows(b.boxId), `${b.boxId}:r:${b.sort}`, true);
+    }
     if (!folder) {
       this.listKey = "";
       const byId = new Map(b.folders.map((f) => [f.id, f]));
@@ -272,11 +566,13 @@ export class UIManager {
       this.list.replaceChildren(this.boxHead(b, folder), h("li", { class: "box-meta none" }, "Dossier vide."));
       return;
     }
-    // Liste virtualisée : lignes de hauteur fixe, seules celles visibles sont construites.
-    const viewKey = `${b.boxId}:${folder.id}`;
+    this.renderRows(b, this.boxHead(b, folder), this.state.visibleRows(b.boxId), `${b.boxId}:${folder.id}:${b.sort}`, false);
+  }
+
+  /** Liste virtualisée : lignes de hauteur fixe, seules celles visibles sont construites. */
+  private renderRows(b: BoxState, head: HTMLElement, rows: ItemSummary[], viewKey: string, showFolder: boolean): void {
     const keep = viewKey === this.listKey ? this.list.scrollTop : 0;
     this.listKey = viewKey;
-    const head = this.boxHead(b, folder);
     const top = h("li", { class: "v-spacer", "aria-hidden": "true" });
     const bottom = h("li", { class: "v-spacer", "aria-hidden": "true" });
     bottom.style.height = `${rows.length * ROW}px`;
@@ -309,7 +605,7 @@ export class UIManager {
       bottom.style.height = `${(rows.length - z) * ROW}px`;
       while (top.nextSibling && top.nextSibling !== bottom) top.nextSibling.remove();
       const frag = document.createDocumentFragment();
-      for (let i = a; i < z; i++) frag.append(this.itemRow(b.boxId, rows[i]));
+      for (let i = a; i < z; i++) frag.append(this.itemRow(b, rows[i], showFolder));
       bottom.before(frag);
     };
     paint();
@@ -317,8 +613,10 @@ export class UIManager {
     this.list.addEventListener("scroll", paint, { passive: true });
   }
 
-  private itemRow(boxId: number, r: ItemSummary): HTMLElement {
+  private itemRow(b: BoxState, r: ItemSummary, showFolder: boolean): HTMLElement {
     const s = this.state;
+    const boxId = b.boxId;
+    const where = showFolder ? b.folders.find((f) => f.id === r.folder) : undefined;
     const selected = s.selectedBoxItem?.boxId === boxId && s.selectedBoxItem.id === r.id;
     const kind = r.message_class && !/^IPM\.Note/i.test(r.message_class) ? r.message_class.replace(/^IPM\./i, "") : null;
     return h(
@@ -339,6 +637,7 @@ export class UIManager {
         { class: "badges" },
         r.verdict ? h("span", { class: `verdict-pill v-${r.verdict}`, title: "Verdict de l'élément ouvert" }, VERDICT_LABEL[r.verdict]) : null,
         kind ? h("span", {}, kind) : null,
+        where ? h("span", { class: "row-folder", title: where.path.join(" › ") }, `📁 ${where.name}`) : null,
         r.has_attachments ? h("span", {}, "📎 pièce(s) jointe(s)") : null,
         r.size ? h("span", {}, humanSize(r.size)) : null,
       ),
@@ -352,7 +651,6 @@ export class UIManager {
     if (!b || b.rows.has(folder)) return;
     try {
       const rows = await boxList(boxId, folder);
-      rows.sort((x, y) => (y.received ?? y.sent ?? "").localeCompare(x.received ?? x.sent ?? ""));
       s.setRows(boxId, folder, rows);
       this.list.scrollTop = 0;
     } catch (e) {
@@ -598,6 +896,7 @@ export class UIManager {
     this.cache.clear();
     this.boxCache.clear();
     this.lastKey = "";
+    this.state.forgetBoxAnalyses();
     this.state.replaceItems(summaries);
     this.updateKeyButton();
   }

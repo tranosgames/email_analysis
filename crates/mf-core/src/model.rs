@@ -392,6 +392,47 @@ pub struct ItemSummary {
     pub verdict: Option<VerdictLevel>,
 }
 
+/// Filtre d'une boîte (FR-007). Tous les critères se combinent en ET ; le texte est comparé sans
+/// tenir compte de la casse ni des accents. Les critères « tables » ne lisent que les tables des
+/// dossiers ; les critères « ouverts » ne portent que sur les éléments déjà analysés.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct BoxFilter {
+    /// Dossier ; `None` = toute la boîte (hors dossiers de recherche).
+    pub folder: Option<u32>,
+    /// Texte cherché dans l'objet, le nom de l'expéditeur et les destinataires.
+    pub text: Option<String>,
+    pub from_name: Option<String>,
+    /// Destinataires : champs À et Cc de la table.
+    pub to: Option<String>,
+    pub subject: Option<String>,
+    pub message_id: Option<String>,
+    /// Date (réception, sinon envoi) ≥ `after` ; `AAAA-MM-JJ` ou RFC 3339, UTC.
+    pub after: Option<String>,
+    /// Date ≤ `before`, à la précision donnée (`2001-05-31` inclut tout le 31 mai).
+    pub before: Option<String>,
+    pub min_size: Option<u32>,
+    pub max_size: Option<u32>,
+    pub has_attachments: Option<bool>,
+    /// Éléments déjà ouverts seulement.
+    pub analyzed_only: bool,
+    /// Verdicts acceptés (éléments ouverts) ; vide = tous.
+    pub verdict: Vec<VerdictLevel>,
+    /// Adresse ou domaine de l'expéditeur (éléments ouverts : absents des tables).
+    pub from_address: Option<String>,
+    pub from_domain: Option<String>,
+}
+
+impl BoxFilter {
+    /// Vrai si un critère ne peut être évalué que sur un élément ouvert.
+    pub fn needs_analysis(&self) -> bool {
+        self.analyzed_only
+            || !self.verdict.is_empty()
+            || self.from_address.is_some()
+            || self.from_domain.is_some()
+    }
+}
+
 /// Élément ou dossier illisible, listé plutôt que masqué (FR-009).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UnreadableItem {

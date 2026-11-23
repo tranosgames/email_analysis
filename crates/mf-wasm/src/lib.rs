@@ -206,6 +206,29 @@ pub fn box_list(id: u32, folder: u32) -> Result<String, JsError> {
     })
 }
 
+/// Filtre (JSON `BoxFilter`) sur les tables de dossiers, sans lire d'élément (FR-007).
+#[wasm_bindgen]
+pub fn box_filter(id: u32, filter_json: &str) -> Result<String, JsError> {
+    let filter: mf_core::BoxFilter = serde_json::from_str(filter_json).map_err(js_err)?;
+    with_box(id, |s| {
+        let rows = s.filter(&filter).map_err(js_err)?;
+        serde_json::to_string(&rows).map_err(js_err)
+    })
+}
+
+/// Indicateurs des éléments ouverts, avec provenance : `[{ source, iocs }]` (JSON).
+#[wasm_bindgen]
+pub fn box_iocs(id: u32) -> Result<String, JsError> {
+    with_box(id, |s| {
+        let groups: Vec<mf_report::IocGroup> = s
+            .iocs(None)
+            .into_iter()
+            .map(|(source, iocs)| mf_report::IocGroup { source, iocs })
+            .collect();
+        serde_json::to_string(&groups).map_err(js_err)
+    })
+}
+
 /// Lit et analyse un élément : le seul appel qui lit un message. `{ evidence, message }`.
 #[wasm_bindgen]
 pub fn box_item(id: u32, item: u32) -> Result<String, JsError> {

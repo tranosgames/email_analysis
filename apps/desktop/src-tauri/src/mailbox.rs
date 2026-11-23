@@ -2,7 +2,7 @@
 //! bibliothèque PST ne sont pas `Send`), pilotée par messages. Entre deux requêtes, le thread
 //! avance le calcul d'empreinte et en publie la progression (`box-hash`).
 
-use mf_core::{Evidence, FolderInfo, ItemSummary, Message, StoreInfo};
+use mf_core::{BoxFilter, Evidence, FolderInfo, ItemSummary, Message, StoreInfo};
 use mf_engine::{BoxSession, Keyring};
 use serde::Serialize;
 use std::path::PathBuf;
@@ -16,6 +16,15 @@ pub enum Req {
     List {
         folder: u32,
         reply: Reply<Vec<ItemSummary>>,
+    },
+    /// Filtre sur les tables de dossiers (FR-007) : aucun élément lu.
+    Filter {
+        filter: BoxFilter,
+        reply: Reply<Vec<ItemSummary>>,
+    },
+    /// Indicateurs des éléments ouverts, avec leur provenance (FR-013).
+    Iocs {
+        reply: Reply<Vec<mf_report::IocGroup>>,
     },
     Item {
         id: u32,
@@ -123,6 +132,17 @@ fn run(mut s: BoxSession, rx: Receiver<Req>, box_id: usize, app: AppHandle) {
         match req {
             Req::List { folder, reply } => {
                 let _ = reply.send(s.list(folder).map_err(|e| e.to_string()));
+            }
+            Req::Filter { filter, reply } => {
+                let _ = reply.send(s.filter(&filter).map_err(|e| e.to_string()));
+            }
+            Req::Iocs { reply } => {
+                let groups = s
+                    .iocs(None)
+                    .into_iter()
+                    .map(|(source, iocs)| mf_report::IocGroup { source, iocs })
+                    .collect();
+                let _ = reply.send(Ok(groups));
             }
             Req::Item { id, keys, reply } => {
                 let r = s

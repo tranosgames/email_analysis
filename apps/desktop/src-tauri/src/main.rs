@@ -221,6 +221,29 @@ fn box_list(
     })
 }
 
+/// Filtre les lignes d'un dossier ou de toute la boîte (FR-007), sans ouvrir les éléments.
+#[tauri::command]
+fn box_filter(
+    box_id: usize,
+    filter: mf_core::BoxFilter,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<ItemSummary>, String> {
+    with_box(&state, box_id, |h| {
+        mailbox::ask(h, |reply| mailbox::Req::Filter { filter, reply })
+    })
+}
+
+/// Indicateurs des éléments ouverts de la boîte, avec leur provenance.
+#[tauri::command]
+fn box_iocs(
+    box_id: usize,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<mf_report::IocGroup>, String> {
+    with_box(&state, box_id, |h| {
+        mailbox::ask(h, |reply| mailbox::Req::Iocs { reply })
+    })
+}
+
 /// Ouvre et analyse un élément (le seul appel qui lit un message).
 #[tauri::command]
 fn box_item(
@@ -512,6 +535,8 @@ fn main() {
             reanalyze_all,
             open_verification_link,
             box_list,
+            box_filter,
+            box_iocs,
             box_item,
             box_report,
             box_save_attachment
