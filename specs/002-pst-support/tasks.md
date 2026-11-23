@@ -165,7 +165,7 @@ corpus : `tests/corpus/pst/`. Numérotation propre à la feature, préfixe `P`.
 
 ## Itération ultérieure — User Story 4 (Priority: P3)
 
-- [ ] P047 [US4] Étude : lecture des éléments supprimés encore référencés et des nœuds orphelins (comportement de libpff comme référence) ; décision documentée avant toute implémentation
+- [x] P047 [US4] Étude : lecture des éléments supprimés encore référencés et des nœuds orphelins (comportement de libpff comme référence) ; décision documentée avant toute implémentation — *étude faite (`research.md` R11) : 0 orphelin lisible sur les 14 boîtes publiques ; décision : implémentation reportée jusqu'à une boîte réelle avec suppressions, en commençant par les orphelins*
 
 ---
 

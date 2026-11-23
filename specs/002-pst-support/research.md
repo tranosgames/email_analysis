@@ -158,3 +158,31 @@ Deux corrections issues de ces mesures :
   affamait le Worker : une recherche attendait la fin du calcul. La boucle rend maintenant la main
   après chaque morceau ; un rapport demandé pendant le calcul attend le calcul en cours au lieu de
   relire le fichier.
+
+## R11 — Éléments supprimés et nœuds orphelins (P047, étude)
+
+**Question.** Faut-il lire les éléments supprimés encore présents dans le fichier (FR-014, P3) ?
+
+**Ce qui existe.** Deux cas distincts :
+- **Nœuds orphelins** : l'élément est encore référencé par l'arbre des nœuds de la boîte, mais plus
+  par aucun dossier (suppression définitive non encore compactée). Lecture fiable : mêmes
+  structures que les éléments normaux, seul le lien vers le dossier manque.
+- **Blocs récupérés** : données encore présentes dans l'espace libre (pages et blocs marqués
+  libres). C'est ce que fait `pffexport -m recovered` de libpff : parcours de l'espace non alloué
+  et reconstitution heuristique ; résultats partiels, faux positifs possibles.
+
+**Mesure sur le corpus (libpff 20261030, binding Python : seuls les orphelins sont exposés).**
+13 des 14 boîtes publiques : 0 orphelin. `outlook-com-a.ost` : 1 orphelin annoncé, illisible
+même par libpff. La récupération dans l'espace libre (`pffexport`) n'est pas mesurable ici.
+
+**Décision.** Pas d'implémentation pour l'instant :
+1. Le corpus public ne permet ni de développer ni de vérifier la fonction (aucun élément à
+   retrouver) ; une implémentation non vérifiée contre la référence violerait la règle du projet
+   (chaque lecture comparée à libpff).
+2. L'interface et le modèle sont prêts à l'accueillir : un dossier virtuel « Éléments
+   récupérés », éléments marqués comme tels dans la provenance, jamais mêlés aux autres
+   (FR-014), et listés dans le manifeste d'export.
+3. À reprendre dès qu'une boîte réelle contenant des suppressions est disponible (boîte de
+   l'utilisateur, ou PST fabriqué par Outlook avec suppressions définitives puis non compacté) :
+   d'abord les **orphelins** (fiables, peu de code : parcours de l'arbre des nœuds, différence
+   avec les éléments rattachés), puis seulement l'espace libre, derrière une option explicite.
