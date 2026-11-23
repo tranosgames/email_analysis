@@ -162,3 +162,66 @@ fn ls_filters_and_iocs() {
     let text = v.to_string();
     assert!(text.contains("support.pst › Drafts › élément #"), "{text}");
 }
+
+#[test]
+fn export_msg_and_eml() {
+    let f = support();
+    let tmp = std::env::temp_dir().join(format!("mf-cli-export-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let out = tmp.join("msg");
+    let o = out.to_str().unwrap();
+    let (code, stdout, err) = mf(&[
+        "--json", "pst", "export", &f, "--folder", "Drafts", "--out", o,
+    ]);
+    assert_eq!(code, 0, "{err}");
+    let m: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(m["items"].as_array().unwrap().len(), 6);
+    assert_eq!(m["store"]["verified"], true);
+    assert_eq!(
+        m["store"]["sha256"],
+        "5872c9aec2e0aacd0f793f3ffa2a7e85eba1d873a1d2659fb01019d4de197a1c"
+    );
+    // 6 fichiers + manifeste JSON et CSV ; chaque fichier se rouvre avec `mf show`.
+    assert_eq!(std::fs::read_dir(&out).unwrap().count(), 8);
+    for it in m["items"].as_array().unwrap() {
+        let p = out.join(it["file"].as_str().unwrap());
+        let (code, _, err) = mf(&["show", p.to_str().unwrap()]);
+        assert_eq!(code, 0, "{err}");
+    }
+    // Destination non vide : refus, rien d'écrit.
+    let (code, _, err) = mf(&["pst", "export", &f, "--folder", "Drafts", "--out", o]);
+    assert_ne!(code, 0);
+    assert!(err.contains("n'est pas vide"), "{err}");
+    // .eml reconstruit, marqué comme tel.
+    let out = tmp.join("eml");
+    let (code, _, err) = mf(&[
+        "pst",
+        "export",
+        &f,
+        "--subject",
+        "downtime",
+        "--format",
+        "eml",
+        "--out",
+        out.to_str().unwrap(),
+    ]);
+    assert_eq!(code, 0, "{err}");
+    let eml = std::fs::read_dir(&out)
+        .unwrap()
+        .filter_map(Result::ok)
+        .find(|e| e.path().extension().is_some_and(|x| x == "eml"))
+        .unwrap();
+    let text = std::fs::read_to_string(eml.path()).unwrap();
+    assert!(text.contains("X-MailForensics-Reconstructed: pst"));
+    // Sans désignation : refus.
+    let (code, _, err) = mf(&[
+        "pst",
+        "export",
+        &f,
+        "--out",
+        tmp.join("rien").to_str().unwrap(),
+    ]);
+    assert_ne!(code, 0);
+    assert!(err.contains("préciser les éléments"), "{err}");
+    std::fs::remove_dir_all(&tmp).unwrap();
+}

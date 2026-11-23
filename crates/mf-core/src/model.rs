@@ -327,6 +327,11 @@ pub struct Provenance {
     /// Chemin dans les messages embarqués (indices de pièces jointes), vide pour l'élément lui-même.
     #[serde(default)]
     pub embedded_path: Vec<u32>,
+    /// Empreinte du contenu de l'élément (SHA-256 de ses propriétés MAPI triées et de ses pièces
+    /// jointes, dans un ordre fixe) : un PST ne garde pas le fichier d'origine du message, cette
+    /// empreinte est stable et recalculable depuis la boîte. Méthode propre à l'outil, documentée.
+    #[serde(default)]
+    pub item_sha256: String,
 }
 
 impl Provenance {

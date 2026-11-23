@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 const PR_ATTACH_DATA: u16 = 0x3701;
+pub(crate) const PR_SUBJECT: u16 = 0x0037;
 const PR_INTERNET_CPID: u16 = 0x3FDE;
 const PR_MESSAGE_CODEPAGE: u16 = 0x3FFD;
 
@@ -87,6 +88,11 @@ impl PstObj {
         }
     }
 
+    /// Propriétés de l'objet (écriture `.msg`).
+    pub(crate) fn props(&self) -> &BTreeMap<u16, PropertyValue> {
+        &self.props
+    }
+
     fn get(&self, id: u16) -> Option<&PropertyValue> {
         self.props.get(&id)
     }
@@ -110,15 +116,20 @@ fn value_bytes(v: &PropertyValue) -> Vec<u8> {
 
 impl PropertySource for PstObj {
     fn string(&self, id: u16) -> Option<String> {
-        match self.get(id)? {
-            PropertyValue::Unicode(s) => Some(s.to_string().trim_end_matches('\0').to_string()),
-            PropertyValue::String8(s) => Some(
-                decode_codepage(s.buffer(), self.codepage)
-                    .trim_end_matches('\0')
-                    .to_string(),
-            ),
-            _ => None,
-        }
+        let v = match self.get(id)? {
+            PropertyValue::Unicode(s) => s.to_string().trim_end_matches('\0').to_string(),
+            PropertyValue::String8(s) => decode_codepage(s.buffer(), self.codepage)
+                .trim_end_matches('\0')
+                .to_string(),
+            _ => return None,
+        };
+        // Objet : la boîte le stocke précédé d'un marqueur de préfixe (0x01, longueur), artefact
+        // de stockage absent des `.msg` d'Outlook.
+        Some(if id == PR_SUBJECT {
+            crate::store::strip_subject_prefix(&v)
+        } else {
+            v
+        })
     }
 
     fn binary(&self, id: u16) -> Option<Cow<'_, [u8]>> {

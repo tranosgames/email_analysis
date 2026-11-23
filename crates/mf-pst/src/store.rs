@@ -133,6 +133,8 @@ fn kind_by_name(name: &str) -> Option<&'static str> {
 /// Une boîte PST/OST ouverte en lecture seule.
 pub struct PstBox {
     store: Rc<dyn Store>,
+    /// Table des noms (propriétés nommées), lue au premier export `.msg`.
+    nameid: RefCell<Option<Option<NameIdStreams>>>,
     info: StoreInfo,
     folders: Vec<FolderInfo>,
     open_folders: RefCell<HashMap<u32, Rc<dyn Folder>>>,
@@ -141,6 +143,9 @@ pub struct PstBox {
 }
 
 /// Ce que l'en-tête dit du fichier, lu avant la bibliothèque PST pour expliquer un échec (P036).
+/// Flux de la table des noms : (identifiant de propriété, octets).
+type NameIdStreams = Vec<(u16, Vec<u8>)>;
+
 pub(crate) struct FileHead {
     size: u64,
     magic: bool,
@@ -287,6 +292,7 @@ impl PstBox {
             info: StoreInfo::default(),
             folders: Vec::new(),
             open_folders: RefCell::new(HashMap::new()),
+            nameid: RefCell::new(None),
             stats,
             items_read: Cell::new(0),
         };
@@ -592,6 +598,14 @@ impl PstBox {
         let obj = PstObj::message(m);
         let mut msg = mf_msg::convert(&obj, 0);
         msg.issues.extend(obj.issues.borrow().iter().cloned());
+        let item_sha256 = {
+            use mf_msg::PropertySource;
+            use sha2::{Digest, Sha256};
+            Sha256::digest(obj.canonical_bytes())
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>()
+        };
         msg.provenance = Some(Provenance {
             store_name: self.info.name.clone(),
             store_sha256: store_sha256.to_string(),
@@ -601,8 +615,39 @@ impl PstBox {
                 .unwrap_or_default(),
             node_id: id,
             embedded_path: Vec::new(),
+            item_sha256,
         });
         Ok(msg)
+    }
+
+    /// Élément rendu en `.msg` (propriétés MAPI reprises telles quelles, FR-008). Lit l'élément.
+    pub fn export_msg(&self, id: u32) -> Result<(Vec<u8>, crate::msg_writer::MsgReport), PstError> {
+        let m = self.store.open_message(&self.entry(id)?, None)?;
+        self.items_read.set(self.items_read.get() + 1);
+        let obj = PstObj::message(m);
+        let nameid = self.nameid_streams();
+        crate::msg_writer::write_msg(&obj, nameid.as_deref())
+            .map_err(|e| PstError(format!("élément #{id} : écriture .msg : {e}")))
+    }
+
+    /// Flux binaires de la table des noms de la boîte (lus une fois), au format MSG.
+    fn nameid_streams(&self) -> Option<Vec<(u16, Vec<u8>)>> {
+        if let Some(cached) = self.nameid.borrow().as_ref() {
+            return cached.clone();
+        }
+        let read = self.store.named_property_map().ok().map(|map| {
+            map.properties()
+                .iter()
+                .filter_map(|(id, v)| match v {
+                    PropertyValue::Binary(b) => Some((*id, b.buffer().to_vec())),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        });
+        // Sans flux d'entrées (0x0003), la table est inutilisable : propriétés nommées écartées.
+        let read = read.filter(|s| s.iter().any(|(id, _)| *id == 0x0003));
+        *self.nameid.borrow_mut() = Some(read.clone());
+        read
     }
 
     /// Nombre d'éléments lus depuis l'ouverture (preuve qu'aucun autre ne l'est).
@@ -617,7 +662,7 @@ impl PstBox {
 }
 
 /// `PR_SUBJECT` des tables commence parfois par deux caractères de contrôle (préfixe normalisé).
-fn strip_subject_prefix(s: &str) -> String {
+pub(crate) fn strip_subject_prefix(s: &str) -> String {
     let mut chars = s.chars();
     if s.starts_with('\u{1}') {
         chars.next();

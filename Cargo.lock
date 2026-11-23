@@ -3165,6 +3165,8 @@ dependencies = [
 name = "mf-engine"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
+ "chrono",
  "mf-analysis",
  "mf-core",
  "mf-eml",
@@ -3193,6 +3195,7 @@ dependencies = [
 name = "mf-pst"
 version = "0.1.0"
 dependencies = [
+ "cfb 0.15.0",
  "chrono",
  "md-5 0.11.0",
  "mf-core",
@@ -3200,6 +3203,7 @@ dependencies = [
  "outlook-pst",
  "serde_json",
  "sha2 0.11.0",
+ "web-time",
 ]
 
 [[package]]

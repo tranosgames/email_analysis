@@ -8,6 +8,8 @@
 
 pub mod hash;
 mod item;
+mod msg_writer;
+pub use msg_writer::MsgReport;
 pub mod source;
 mod store;
 

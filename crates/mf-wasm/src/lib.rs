@@ -183,7 +183,7 @@ fn with_box<T>(
 pub fn box_open(id: u32, name: &str, reader: BlobReader) -> Result<String, JsError> {
     let len = reader.size().max(0.0) as u64;
     let session = mf_engine::BoxSession::open_with(
-        || {
+        move || {
             Ok(Box::new(BlobSource {
                 reader: reader.clone(),
                 len,

@@ -11,6 +11,8 @@ mf-core.workspace = true
 mf-msg.workspace = true
 outlook-pst.workspace = true
 sha2.workspace = true
+cfb.workspace = true
+web-time = "1.1.0"
 md-5.workspace = true
 chrono.workspace = true
 

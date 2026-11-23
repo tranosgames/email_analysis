@@ -25,8 +25,12 @@ pub struct HashProgress {
     pub md5: Option<String>,
 }
 
+/// Fabrique de sources sur le fichier de la boîte (lecture, empreinte, revérification).
+type SourceFactory = Box<dyn FnMut() -> io::Result<Box<dyn ByteSource>>>;
+
 pub struct BoxSession {
     pst: PstBox,
+    make_source: SourceFactory,
     name: String,
     hash_source: Box<dyn ByteSource>,
     hasher: StreamHasher,
@@ -81,7 +85,7 @@ impl BoxSession {
     /// Ouvre une boîte : seule l'arborescence est lue. `make_source` rend une nouvelle source sur
     /// le même fichier à chaque appel (lecture de la boîte, empreinte).
     pub fn open_with(
-        mut make_source: impl FnMut() -> io::Result<Box<dyn ByteSource>>,
+        mut make_source: impl FnMut() -> io::Result<Box<dyn ByteSource>> + 'static,
         name: &str,
     ) -> Result<Self, EngineError> {
         let pst = PstBox::open_with(&mut make_source, name).map_err(pst_err)?;
@@ -92,6 +96,7 @@ impl BoxSession {
         let total = hash_source.len();
         Ok(Self {
             pst,
+            make_source: Box::new(make_source),
             name: name.to_string(),
             hash_source,
             hasher: StreamHasher::new(total),
@@ -397,6 +402,141 @@ impl BoxSession {
                 .extension()
                 .map(|e| e.to_string_lossy().to_ascii_lowercase()),
         }
+    }
+
+    /// Exporte des éléments (FR-008) : chaque fichier produit, puis `manifest.json` et
+    /// `manifest.csv`, est remis à `sink` (dossier sur disque ou archive ZIP). L'empreinte de la
+    /// boîte est d'abord recalculée et comparée à celle de l'ouverture : si la boîte a changé,
+    /// rien n'est exporté. `fresh` : empreinte recalculée par l'appelant (navigateur, en flux) ;
+    /// sinon elle l'est ici depuis la source. Un élément illisible est listé dans le manifeste.
+    pub fn export(
+        &mut self,
+        ids: &[u32],
+        format: crate::export::ExportFormat,
+        generated_utc: &str,
+        keys: &Keyring,
+        fresh: Option<(String, String)>,
+        sink: &mut dyn FnMut(&str, &[u8]) -> io::Result<()>,
+    ) -> Result<crate::export::Manifest, EngineError> {
+        use crate::export::{
+            ExportError, ExportFormat, ExportedAttachment, ExportedItem, Manifest, ManifestStore,
+            export_file_name, reconstruct_eml,
+        };
+        let name = self.name.clone();
+        let io_err = |source: io::Error| EngineError::Io {
+            path: name.clone(),
+            source,
+        };
+        let opened = self.hash_all()?;
+        let (sha256, md5) = (
+            opened.sha256.unwrap_or_default(),
+            opened.md5.unwrap_or_default(),
+        );
+        let (now_sha, now_md5) = match fresh {
+            Some(f) => f,
+            None => {
+                let mut src = (self.make_source)().map_err(io_err)?;
+                let d = mf_pst::hash::digests(src.as_mut()).map_err(io_err)?;
+                (d.sha256, d.md5)
+            }
+        };
+        if now_sha != sha256 || now_md5 != md5 {
+            return Err(EngineError::Parse(format!(
+                "la boîte a changé depuis son ouverture (SHA-256 {sha256} puis {now_sha}) : export refusé"
+            )));
+        }
+        let mut items = Vec::new();
+        let mut errors = Vec::new();
+        let mut named_total = 0;
+        for &id in ids {
+            let a = match self.open_item(id, keys) {
+                Ok(a) => a,
+                Err(e) => {
+                    errors.push(ExportError {
+                        id,
+                        reason: e.to_string(),
+                    });
+                    continue;
+                }
+            };
+            let m = a.message.clone();
+            let prov = m.provenance.clone().unwrap_or_default();
+            let label = format!("{} › élément #{id}", prov.label());
+            let (bytes, named) = match format {
+                ExportFormat::Msg => match self.pst.export_msg(id) {
+                    Ok((b, r)) => (b, r.named_skipped),
+                    Err(e) => {
+                        errors.push(ExportError {
+                            id,
+                            reason: e.to_string(),
+                        });
+                        continue;
+                    }
+                },
+                ExportFormat::Eml => (reconstruct_eml(&m, &label), 0),
+            };
+            named_total += named;
+            let file = export_file_name(id, m.subject.as_deref(), format);
+            sink(&file, &bytes).map_err(io_err)?;
+            let (fsha, fmd5) = mf_core::hashes(&bytes);
+            items.push(ExportedItem {
+                id,
+                folder_path: prov.folder_path.clone(),
+                subject: m.subject.clone(),
+                message_id: m.message_id.clone(),
+                from: m
+                    .from
+                    .first()
+                    .and_then(|f| f.address.clone().or_else(|| f.display_name.clone())),
+                date_utc: m.date_utc.clone(),
+                file,
+                size: bytes.len() as u64,
+                sha256: fsha,
+                md5: fmd5,
+                item_sha256: prov.item_sha256.clone(),
+                attachments: m
+                    .attachments
+                    .iter()
+                    .map(|x| ExportedAttachment {
+                        name: x.filename.clone(),
+                        sha256: x.sha256.clone(),
+                    })
+                    .collect(),
+                named_properties_skipped: named,
+                reconstructed: format == ExportFormat::Eml,
+            });
+        }
+        let mut notes = vec![
+            "empreinte_element : SHA-256 des propriétés MAPI de l'élément, triées, puis de ses pièces jointes ; recalculable depuis la boîte avec Email Analysis.".to_string(),
+        ];
+        match format {
+            ExportFormat::Msg if named_total > 0 => notes.push(format!(
+                "{named_total} propriété(s) nommée(s) (identifiant ≥ 0x8000) non reprise(s) : leur table de noms est propre à la boîte."
+            )),
+            ExportFormat::Eml => notes.push(
+                "Fichiers .eml reconstruits (X-MailForensics-Reconstructed: pst) : ce ne sont pas les originaux, une signature DKIM d'origine n'y est plus vérifiable.".into(),
+            ),
+            _ => {}
+        }
+        let manifest = Manifest {
+            tool: "Email Analysis".into(),
+            version: env!("CARGO_PKG_VERSION").into(),
+            generated_utc: generated_utc.into(),
+            store: ManifestStore {
+                name: self.name.clone(),
+                size: self.pst.info().size,
+                sha256,
+                md5,
+                verified: true,
+            },
+            format,
+            items,
+            errors,
+            notes,
+        };
+        sink("manifest.json", manifest.to_json().as_bytes()).map_err(io_err)?;
+        sink("manifest.csv", manifest.to_csv().as_bytes()).map_err(io_err)?;
+        Ok(manifest)
     }
 
     /// Avance le calcul d'empreinte d'au plus `budget` octets.

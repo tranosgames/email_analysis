@@ -24,6 +24,8 @@ struct Cli {
     cmd: Cmd,
 }
 
+// Arguments de ligne de commande, construits une fois : leur taille en mémoire est sans enjeu.
+#[allow(clippy::large_enum_variant)]
 #[derive(Subcommand)]
 enum Cmd {
     /// Boîtes Outlook PST / OST : seuls les éléments désignés par --id sont lus.
@@ -720,6 +722,25 @@ enum PstCmd {
         #[command(flatten)]
         filter: BoxFilterArgs,
     },
+    /// Exporte des éléments en `.msg` (fidèle) ou `.eml` (reconstruit), avec manifeste.
+    /// Éléments désignés par `--id`, sinon ceux du filtre (dossier, expéditeur, période…).
+    Export {
+        file: PathBuf,
+        /// Identifiants séparés par des virgules.
+        #[arg(long, value_delimiter = ',')]
+        id: Vec<u32>,
+        /// Dossier (identifiant ou chemin) quand les éléments viennent du filtre.
+        #[arg(long)]
+        folder: Option<String>,
+        #[command(flatten)]
+        filter: BoxFilterArgs,
+        /// msg ou eml
+        #[arg(long, default_value = "msg")]
+        format: String,
+        /// Dossier de destination : vide ou à créer, hors du dossier de la preuve.
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Indicateurs d'éléments désignés (ouverts et analysés), fusionnés avec leur provenance.
     Iocs {
         file: PathBuf,
@@ -1067,6 +1088,71 @@ fn pst_cmd(cmd: PstCmd, json: bool, keys: &mf_engine::Keyring) -> Result<(), Str
                 dest.display(),
                 a.message.findings.len()
             );
+        }
+        PstCmd::Export {
+            file,
+            id,
+            folder,
+            filter,
+            format,
+            out,
+        } => {
+            let format = mf_engine::export::ExportFormat::parse(&format)?;
+            let mut s = open(&file)?;
+            let ids: Vec<u32> = if id.is_empty() {
+                let folder = match folder {
+                    Some(_) => pick_folders(&s, &folder)?.first().copied(),
+                    None => None,
+                };
+                let f = filter.to_filter(folder)?;
+                if folder.is_none() && f == mf_core::BoxFilter::default() {
+                    return Err("préciser les éléments : --id, --folder ou un filtre (exporter toute la boîte d'un coup n'est pas proposé)".into());
+                }
+                s.filter(&f)
+                    .map_err(|e| e.to_string())?
+                    .iter()
+                    .map(|r| r.id)
+                    .collect()
+            } else {
+                id
+            };
+            if ids.is_empty() {
+                return Err("aucun élément ne correspond".into());
+            }
+            let dest = mf_engine::export::prepare_export_dir(&out, &file)?;
+            let mut written = 0usize;
+            let manifest = s
+                .export(&ids, format, &now_utc(), keys, None, &mut |name, bytes| {
+                    // Création exclusive : jamais d'écrasement.
+                    let mut f = std::fs::OpenOptions::new()
+                        .write(true)
+                        .create_new(true)
+                        .open(dest.join(name))?;
+                    std::io::Write::write_all(&mut f, bytes)?;
+                    written += 1;
+                    Ok(())
+                })
+                .map_err(|e| e.to_string())?;
+            if json {
+                return print(&manifest);
+            }
+            println!(
+                "{} élément(s) exporté(s) en .{} dans {} ({} fichiers avec le manifeste)",
+                manifest.items.len(),
+                format.ext(),
+                dest.display(),
+                written
+            );
+            println!(
+                "boîte : SHA-256 {} (revérifiée avant l'export)",
+                manifest.store.sha256
+            );
+            for e in &manifest.errors {
+                eprintln!("⚠ élément #{} non exporté : {}", e.id, e.reason);
+            }
+            for n in &manifest.notes {
+                println!("note : {n}");
+            }
         }
         PstCmd::Iocs {
             file,
