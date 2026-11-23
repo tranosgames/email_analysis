@@ -3,7 +3,7 @@
 **Drop in a suspicious email. One second later: a verdict, the evidence behind it, and everything you need to act.**
 
 Email Analysis is a forensic investigation tool for **`.eml`** and **`.msg`** (Outlook) files,
-and for whole Outlook mailboxes (**`.pst`** / **`.ost`**) in the desktop app.
+and for whole Outlook mailboxes (**`.pst`** / **`.ost`**).
 It reads a message the way an analyst would — where it really came from, who signed it, where its
 links lead, what its attachments hide — and presents it in a clear interface, a printable report
 and ready-to-block indicators.
@@ -117,8 +117,8 @@ appointments and tasks are shown without a verdict.
 
 No installation: open the page and drop your files. The engine is compiled to WebAssembly and runs
 in a worker isolated from the page; a strict security policy forbids any connection after loading.
-Once open, the page keeps working offline. Mailboxes (`.pst` / `.ost`) currently open in the
-desktop app only.
+Once open, the page keeps working offline. Outlook mailboxes (`.pst` / `.ost`) open there too:
+the file is read in slices, never copied into memory, so even a large mailbox stays light.
 
 ### Desktop app
 
@@ -234,8 +234,7 @@ then a plan and tasks checked off as they are implemented.
 
 ## Roadmap
 
-- **Mailboxes, continued**: filters on folder columns, opening in the web version, export of
-  analysed items.
+- **Mailboxes, continued**: filters on folder columns, export of analysed items.
 - **Team lists**: the organisation's legitimate domains, imported block lists, in-house rules taken
   into account by the verdict.
 - Contents of archives and Office documents.

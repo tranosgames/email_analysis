@@ -15,6 +15,7 @@ mf-report.workspace = true
 serde_json.workspace = true
 wasm-bindgen = "=0.2.129"
 mf-sig.workspace = true
+mf-pst.workspace = true
 
 # rPGP et RustCrypto exigent une source d'aléa à la compilation (jamais utilisée pour vérifier) :
 # en WebAssembly, elle vient de crypto.getRandomValues du navigateur.

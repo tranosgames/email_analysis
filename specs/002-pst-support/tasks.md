@@ -111,9 +111,13 @@ corpus : `tests/corpus/pst/`. Numérotation propre à la feature, préfixe `P`.
 
 **Independent Test**: quickstart scénario 4.
 
-- [ ] P030 [P] `tests/web_e2e.py` : ouverture de `support.pst` et d'Enron 29 Mo (si présent), arborescence, message ouvert, filtres ; résultats identiques à la CLI ; zéro requête réseau ; mémoire du Worker relevée
-- [ ] P031 `crates/mf-wasm` : `BlobSource` (fonction de lecture fournie par le Worker), API de boîte (contracts/engine-api.md, messages du Worker)
-- [ ] P032 `apps/desktop/src/engine.worker.ts` + `ipc.ts` : `File` transmis une fois au Worker, `FileReaderSync` sur `File.slice`, boucles `*_step` entrecoupées de messages de progression, mêmes appels que Tauri pour l'interface
+- [x] P030 [P] `tests/web_e2e.py` : ouverture de `support.pst` et d'Enron 29 Mo (si présent), arborescence, message ouvert, filtres ; résultats identiques à la CLI ; zéro requête réseau ; mémoire du Worker relevée
+  > Fait sauf les filtres (Phase 4, pas encore livrée) et la mesure mémoire (P033) : ouverture de
+  > `support.pst` et d'Enron 29 Mo (0,1 s), arborescence, ligne et pièces jointes identiques à la
+  > CLI, seul l'élément cliqué est lu, pièce jointe téléchargée à l'identique, empreinte de la boîte
+  > identique, aucune requête réseau.
+- [x] P031 `crates/mf-wasm` : `BlobSource` (fonction de lecture fournie par le Worker), API de boîte (contracts/engine-api.md, messages du Worker)
+- [x] P032 `apps/desktop/src/engine.worker.ts` + `ipc.ts` : `File` transmis une fois au Worker, `FileReaderSync` sur `File.slice`, boucles `*_step` entrecoupées de messages de progression, mêmes appels que Tauri pour l'interface
 - [ ] P033 Mesurer la mémoire de l'onglet sur la plus grosse boîte disponible ; objectif < 300 Mo (SC-004) ; consigner dans `research.md`
 
 ---

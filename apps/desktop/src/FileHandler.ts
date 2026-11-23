@@ -6,7 +6,7 @@
 import { inTauri, initialPaths, openSources, pickPaths, type WebFile } from "./ipc";
 import type { MessageHandler } from "./MessageHandler";
 
-const MAIL_EXT = /\.(eml|msg)$/i;
+const MAIL_EXT = /\.(eml|msg|pst|ost)$/i;
 
 export class FileHandler {
   private overlay = document.getElementById("drop-overlay") as HTMLDivElement;
@@ -45,7 +45,7 @@ export class FileHandler {
     input.type = "file";
     input.multiple = true;
     if (directory) input.webkitdirectory = true;
-    else input.accept = ".eml,.msg,message/rfc822,application/vnd.ms-outlook";
+    else input.accept = ".eml,.msg,.pst,.ost,message/rfc822,application/vnd.ms-outlook";
     input.addEventListener("change", () => {
       const files = [...(input.files ?? [])]
         .map((file) => ({ path: file.webkitRelativePath || file.name, file }))

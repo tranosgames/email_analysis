@@ -30,6 +30,8 @@ MF = ROOT / "target" / "debug" / "mf"
 
 MAILS = sorted(p for p in CORPUS.glob("*/*") if p.suffix in (".eml", ".msg") and p.parent.name != "malformed")
 BROKEN = CORPUS / "malformed" / "truncated.msg"
+SUPPORT_PST = CORPUS / "pst" / "support.pst"
+ENRON_PST = CORPUS / "pst" / "large" / "enron-29.pst"
 
 failures: list[str] = []
 
@@ -44,6 +46,62 @@ def cli(path: pathlib.Path) -> tuple[dict, dict]:
     ev = json.loads(subprocess.check_output([MF, "hash", "--json", path]))[0]
     msg = json.loads(subprocess.check_output([MF, "show", "--json", path]))
     return ev, msg
+
+
+def mf_pst(*args: object) -> object:
+    return json.loads(subprocess.check_output([MF, "--json", "pst", *map(str, args)]))
+
+
+def check_box(page, path: pathlib.Path, folder_name: str) -> None:
+    """Boîte PST dans le navigateur (feature 002, P030) : mêmes résultats que la CLI."""
+    import time
+
+    tree = mf_pst("tree", path)
+    folder = next(f for f in tree if f["name"] == folder_name and f["item_count"])
+    rows = mf_pst("ls", "--folder", folder["id"], path)
+    name = path.name
+    t0 = time.monotonic()
+    with page.expect_file_chooser() as fc:
+        page.click("#open-files")
+    fc.value.set_files(str(path))
+    page.wait_for_selector(".box-head .box-title", timeout=30000)
+    opened = time.monotonic() - t0
+    check(name in page.locator(".box-head").inner_text(), f"{name} : boîte ouverte en {opened:.2f} s, arborescence affichée")
+    check("0 élément(s) lu(s)" in page.locator(".box-read").inner_text(), f"{name} : aucun élément lu à l'ouverture")
+    # Plusieurs dossiers peuvent porter le même nom : on désigne celui de la CLI par son chemin.
+    title = " › ".join(folder["path"]).replace('"', '\\"')
+    row = page.locator(f'.folder-row[title="{title}"]')
+    check(row.locator(".folder-count").inner_text() == str(folder["item_count"]), f"{name} : {folder_name} = {folder['item_count']} éléments (CLI)")
+    row.click()
+    page.wait_for_selector(".box-row")
+    first = page.locator(".box-row").first
+    shown = first.locator(".subject").inner_text()
+    ordered = sorted(rows, key=lambda r: r.get("received") or r.get("sent") or "", reverse=True)
+    check(shown == ((ordered[0].get("subject") or "").strip() or "(sans objet)"), f"{name} : première ligne = « {shown[:50]} »")
+    first.click()
+    page.wait_for_selector(".reading-main", timeout=30000)
+    item = mf_pst("show", "--id", ordered[0]["id"], path)
+    crumbs = page.locator(".breadcrumb").inner_text()
+    check(name in crumbs and folder_name in crumbs, f"{name} : provenance « {crumbs.replace(chr(10), ' ')} »")
+    names = [n.inner_text() for n in page.locator(".inventory .file-name").all()]
+    check(names == [a["filename"] for a in item["message"]["attachments"]], f"{name} : pièces jointes identiques à la CLI {names}")
+    check("1 élément(s) lu(s)" in page.locator(".box-read").inner_text(), f"{name} : seul l'élément cliqué est lu")
+    with_att = next((i for i, r in enumerate(ordered[:20]) if r.get("has_attachments")), None)
+    if with_att is not None:
+        page.locator(".box-row").nth(with_att).click()
+        page.wait_for_selector(".inventory button.download", timeout=30000)
+        att = mf_pst("show", "--id", ordered[with_att]["id"], path)["message"]["attachments"][0]
+        page.once("dialog", lambda d: d.accept())
+        with page.expect_download() as dl:
+            page.locator(".inventory button.download").first.click()
+        got = hashlib.sha256(pathlib.Path(dl.value.path()).read_bytes()).hexdigest()
+        check(got == att["sha256"], f"{name} : pièce jointe « {att['filename']} » téléchargée, SHA-256 identique")
+    sha = mf_pst("info", path)["hash"]["sha256"]
+    page.wait_for_selector(f".box-hash[title*='{sha}']", timeout=60000)
+    check(True, f"{name} : empreinte SHA-256 de la boîte identique à la CLI")
+    page.click(".box-back")
+    page.click(".box-back")
+    page.wait_for_selector(".box-entry")
 
 
 def serve() -> str:
@@ -327,6 +385,12 @@ def main() -> int:
         tagged = page.locator(".tag-blocked").count()
         check(tagged == 9, f"liste des URL : 9 URL marquées « chargement bloqué » ({tagged})")
         page.locator(".body-tabs button", has_text="HTML").first.click()
+
+        # Boîtes PST : ouverture dans le navigateur, lecture par tranches du fichier.
+        check_box(page, SUPPORT_PST, "Drafts")
+        if ENRON_PST.exists():
+            check_box(page, ENRON_PST, "Sent Items")
+        page.screenshot(path=str(APP / "test-results" / "web-pst.png"))
 
         check(not requests, f"aucune requête réseau après le chargement (vu : {requests[:3]})")
         check(not errors, f"aucune erreur JavaScript ({errors[:2]})")

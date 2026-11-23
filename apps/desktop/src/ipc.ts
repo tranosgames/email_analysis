@@ -397,6 +397,9 @@ export interface WebFile {
 export const WEB_MAX_SIZE = 500 * 1024 * 1024;
 
 const webViews: MessageView[] = [];
+/** Boîtes ouvertes dans le Worker (signature nom|taille|date, indice = identifiant). */
+const webBoxes: string[] = [];
+const boxHashListeners: ((h: BoxHash) => void)[] = [];
 /** Clé des octets de chaque preuve dans le worker (même indice que webViews). */
 const webKeys: number[] = [];
 let worker: Worker | null = null;
@@ -409,6 +412,7 @@ interface WorkerReply {
   data?: ArrayBuffer;
   name?: string;
   error?: string;
+  json?: unknown;
 }
 const pending = new Map<number, (r: WorkerReply) => void>();
 
@@ -424,7 +428,12 @@ function engine(): Worker {
   if (!worker) {
     worker = createEngineWorker();
     worker.onmessage = (e: MessageEvent) => {
-      const d = e.data as WorkerReply & { id?: number };
+      const d = e.data as WorkerReply & { id?: number; event?: string; hash?: BoxHash };
+      if (d.event === "box-hash" && d.hash) {
+        boxHashListeners.forEach((fn) => fn(d.hash as BoxHash));
+        return;
+      }
+      if (d.event) return;
       if (d.id === undefined) {
         // Module prêt : plus aucune ressource ne sera demandée au serveur (FR-W02).
         document.documentElement.dataset.engine = (e.data as { version?: string }).version ?? "ready";
@@ -471,11 +480,23 @@ async function openWebFiles(files: WebFile[]): Promise<OpenResult[]> {
   const results: OpenResult[] = [];
   for (const { path, file } of files) {
     if (/\.(pst|ost)$/i.test(path)) {
-      results.push({
-        kind: "failed",
-        path,
-        error: "les boîtes PST/OST s'ouvrent pour l'instant dans l'application de bureau",
-      });
+      // Doublon : même nom, même taille, même date (l'empreinte n'est connue qu'après coup).
+      const sig = `${file.name}|${file.size}|${file.lastModified}`;
+      const of = webBoxes.indexOf(sig);
+      if (of >= 0) {
+        results.push({ kind: "failed", path, error: "cette boîte est déjà ouverte" });
+        continue;
+      }
+      const boxId = webBoxes.length;
+      // Le File est cloné vers le Worker sans copier son contenu ; seules des tranches seront lues.
+      const r = await ask({ kind: "box-open", box: boxId, name: file.name, file });
+      if (!r.ok || !r.json) {
+        results.push({ kind: "failed", path, error: r.error ?? "boîte illisible" });
+        continue;
+      }
+      webBoxes.push(sig);
+      const { store, folders } = r.json as { store: StoreInfo; folders: FolderInfo[] };
+      results.push({ kind: "mailbox", box_id: boxId, path, store, folders });
       continue;
     }
     if (file.size > WEB_MAX_SIZE) {
@@ -594,11 +615,16 @@ export async function saveAttachment(id: number, path: number[], att: Attachment
   }
   const r = await ask({ kind: "extract", key: webKeys[id], path, index: att.index, filename: att.filename });
   if (!r.ok || !r.data) throw new Error(r.error ?? "extraction impossible");
+  return downloadBytes(r.data, r.name ?? "piece-jointe");
+}
+
+/** Téléchargement local d'octets (Blob) : aucune requête réseau. */
+function downloadBytes(data: ArrayBuffer, name: string): string {
   // application/octet-stream : le navigateur enregistre sans tenter d'ouvrir ni d'afficher.
-  const url = URL.createObjectURL(new Blob([r.data], { type: "application/octet-stream" }));
+  const url = URL.createObjectURL(new Blob([data], { type: "application/octet-stream" }));
   const link = document.createElement("a");
   link.href = url;
-  link.download = r.name ?? "piece-jointe";
+  link.download = name;
   document.body.append(link);
   link.click();
   link.remove();
@@ -733,6 +759,7 @@ export async function clearKeys(): Promise<void> {
 export async function reanalyzeAll(): Promise<Summary[]> {
   if (inTauri) return invoke<Summary[]>("reanalyze_all");
   const out: Summary[] = [];
+  if (webBoxes.length) await ask({ kind: "box-forget" });
   for (let i = 0; i < webViews.length; i++) {
     const r = await ask({ kind: "reanalyze", key: webKeys[i] });
     if (r.ok && r.view) webViews[i] = r.view;
@@ -754,25 +781,36 @@ export async function openVerificationLink(link: ExternalLink): Promise<boolean>
   return true;
 }
 
-// ——— Boîtes PST / OST (feature 002, application de bureau) ———
+// ——— Boîtes PST / OST (feature 002) : Tauri sur le bureau, Worker WebAssembly dans le navigateur ———
 
 /** Lignes d'un dossier, lues dans sa table, sans ouvrir les éléments. */
+async function boxAsk(job: Record<string, unknown>): Promise<WorkerReply> {
+  const r = await ask(job);
+  if (!r.ok) throw new Error(r.error ?? "erreur de la boîte");
+  return r;
+}
+
 export async function boxList(boxId: number, folder: number): Promise<ItemSummary[]> {
-  if (!inTauri) throw new Error("boîtes PST/OST : application de bureau");
+  if (!inTauri) return (await boxAsk({ kind: "box-list", box: boxId, folder })).json as ItemSummary[];
   return invoke<ItemSummary[]>("box_list", { boxId, folder });
 }
 
 /** Ouvre et analyse un élément : le seul appel qui lit un message. */
 export async function boxItem(boxId: number, id: number): Promise<MessageView> {
-  if (!inTauri) throw new Error("boîtes PST/OST : application de bureau");
+  if (!inTauri) return (await boxAsk({ kind: "box-item", box: boxId, item: id })).view as MessageView;
   return invoke<MessageView>("box_item", { boxId, id });
 }
 
 export async function boxReport(boxId: number, id: number, path: number[], format: "html" | "json"): Promise<string> {
+  if (!inTauri) return (await boxAsk({ kind: "box-report", box: boxId, item: id, path, format, generated: nowUtc() })).text ?? "";
   return invoke<string>("box_report", { boxId, id, path, format, generated: nowUtc() });
 }
 
 export async function boxSaveAttachment(boxId: number, id: number, path: number[], att: Attachment): Promise<string | null> {
+  if (!inTauri) {
+    const r = await boxAsk({ kind: "box-extract", box: boxId, item: id, path, index: att.index, filename: att.filename });
+    return downloadBytes(r.data as ArrayBuffer, r.name ?? "piece-jointe");
+  }
   const { save } = await import("@tauri-apps/plugin-dialog");
   const dest = await save({ defaultPath: att.filename.replace(/[\\/]/g, "_"), title: "Enregistrer la pièce jointe" });
   if (!dest) return null;
@@ -782,7 +820,10 @@ export async function boxSaveAttachment(boxId: number, id: number, path: number[
 
 /** Progression du calcul d'empreinte des boîtes. */
 export async function onBoxHash(fn: (h: BoxHash) => void): Promise<void> {
-  if (!inTauri) return;
+  if (!inTauri) {
+    boxHashListeners.push(fn);
+    return;
+  }
   const { listen } = await import("@tauri-apps/api/event");
   await listen<BoxHash>("box-hash", (e) => fn(e.payload));
 }
