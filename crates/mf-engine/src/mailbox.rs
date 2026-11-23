@@ -325,24 +325,44 @@ impl BoxSession {
                     source,
                 })?
             {
-                // L'empreinte est reportée sur les éléments déjà ouverts.
-                for a in self.analyzed.values_mut() {
-                    a.evidence.sha256 = d.sha256.clone();
-                    a.evidence.md5 = d.md5.clone();
-                    if let Some(p) = a.message.provenance.as_mut() {
-                        p.store_sha256 = d.sha256.clone();
-                    }
-                }
-                self.digests = Some(d);
+                self.finish_hash(d);
             }
         }
+        Ok(self.progress())
+    }
+
+    /// Avance l'empreinte avec des octets lus par l'appelant à partir de `offset` (flux du
+    /// navigateur, sans allocation à chaque pas). Des octets mal placés sont ignorés : la
+    /// progression retournée dit où reprendre.
+    pub fn hash_feed(&mut self, offset: u64, data: &[u8]) -> HashProgress {
+        if self.digests.is_none() {
+            if let Some(d) = self.hasher.feed(offset, data) {
+                self.finish_hash(d);
+            }
+        }
+        self.progress()
+    }
+
+    fn progress(&self) -> HashProgress {
         let (done, total) = self.hasher.progress();
-        Ok(HashProgress {
+        HashProgress {
             done,
             total,
             sha256: self.digests.as_ref().map(|d| d.sha256.clone()),
             md5: self.digests.as_ref().map(|d| d.md5.clone()),
-        })
+        }
+    }
+
+    /// L'empreinte est reportée sur les éléments déjà ouverts.
+    fn finish_hash(&mut self, d: Digests) {
+        for a in self.analyzed.values_mut() {
+            a.evidence.sha256 = d.sha256.clone();
+            a.evidence.md5 = d.md5.clone();
+            if let Some(p) = a.message.provenance.as_mut() {
+                p.store_sha256 = d.sha256.clone();
+            }
+        }
+        self.digests = Some(d);
     }
 
     /// Calcule l'empreinte jusqu'au bout.

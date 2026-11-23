@@ -116,3 +116,45 @@ sur le corpus de la feature 001.
 - **Volume** : aucun PST de plusieurs Go public n'a pu être récupéré depuis l'environnement de
   développement ; SC-003/SC-004 seront vérifiés sur un PST fourni par l'utilisateur (et, en CI, sur un
   PST synthétique généré à partir du corpus si la bibliothèque le permet).
+
+## R10 — Mesures (2026-11-23)
+
+**Coût d'analyse d'un message (P029)**, binaire `--release`, une seule session :
+
+| Cas | 1ʳᵉ analyse | Ensuite |
+|---|---|---|
+| `phishing-basic.eml` | 4,1 ms | 0,07 ms |
+| Élément Enron (moyenne sur 300) | — | 0,11 ms |
+| `unicode.msg` (2 TIFF de 1 Mo) | 14 ms | 10,6 ms |
+| `quishing-html-attachment.eml` (images, QR) | 17 ms | 18 ms |
+
+Les expressions régulières sont compilées une fois (`LazyLock`) : les 4 ms de la première analyse ne
+se répètent pas. Le reste du temps vient du décodage des images pour y chercher un QR code, coût
+voulu et borné (nombre et taille d'images limités). Aucune initialisation répétée à supprimer.
+
+**Mémoire de l'onglet web (P033, SC-004)** : RSS des processus de rendu de Chromium (page, Worker et
+WebAssembly compris), Chromium 2026, sans ramasse-miettes forcé. Les fichiers de 2 et 8 Go sont la
+boîte Gmail de 56 Mo suivie d'espace vide (fichier creux) : la lecture et l'empreinte portent bien
+sur toute la taille.
+
+| Boîte | Page seule | Boîte ouverte | Pic pendant l'empreinte | Empreinte | Filtre sur toute la boîte | 17 éléments ouverts |
+|---|---|---|---|---|---|---|
+| Enron 29 Mo | 136 Mo | 179 Mo | 188 Mo | 0,6 s | 208 Mo | 302 Mo |
+| Gmail 56 Mo | 142 Mo | 163 Mo | 163 Mo | 0,6 s | 208 Mo | 291 Mo |
+| 2 Go | 140 Mo | 162 Mo | 170 Mo | 18 s | 216 Mo | 288 Mo |
+| 8 Go | 138 Mo | 160 Mo | 177 Mo | 73 s | 197 Mo | 273 Mo |
+
+La mémoire ne dépend pas de la taille du fichier. Avec un ramasse-miettes forcé, 31 éléments ouverts
+sur Enron retombent à 210 Mo (JavaScript de la page 10 Mo, mémoire WebAssembly du moteur 26 Mo) :
+l'écart avec la colonne « 17 éléments ouverts » est fait de déchets que Chromium récupère plus tard.
+Objectif < 300 Mo tenu pour la mémoire retenue ; le pic reste sous 310 Mo.
+
+Deux corrections issues de ces mesures :
+- L'empreinte lisait le fichier par `FileReaderSync`, qui crée un tampon de 8 Mo à chaque pas : sur
+  2 Go, le pic montait à 453 Mo. Elle lit maintenant le flux du fichier dans un seul tampon de 4 Mo
+  réutilisé (lecteur « BYOB ») et le moteur reçoit ces octets (`box_hash_feed`) : pic à 170 Mo, et
+  calcul plus rapide (18 s au lieu de 22 s).
+- Les lectures du flux se résolvant sans passer par la file des messages, la boucle d'empreinte
+  affamait le Worker : une recherche attendait la fin du calcul. La boucle rend maintenant la main
+  après chaque morceau ; un rapport demandé pendant le calcul attend le calcul en cours au lieu de
+  relire le fichier.

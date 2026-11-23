@@ -99,7 +99,7 @@ corpus : `tests/corpus/pst/`. Numérotation propre à la feature, préfixe `P`.
 - [x] P026 [US2] Compteur des messages lus exposé par la session (tests, CLI `info`, interface « 3 messages lus sur 2 178 ») : preuve que rien d'autre n'est lu (FR-006) — *`items_read` (CLI `info`, `ls`, `iocs`) ; interface « N élément(s) lu(s) sur M »*
 - [x] P027 [US2] CLI : filtres de `mf pst ls`, `mf pst iocs --id` — *`mf pst ls --text --from-name --to --subject --message-id --after --before --min-size --max-size --attachments/--no-attachments`, `mf pst iocs --id`*
 - [x] P028 [US2] Tauri + interface : barre de filtres (dossier ou toute la boîte), tri des colonnes, pastille de verdict sur les messages ouverts, « analysés seulement », export des indicateurs des messages analysés — *bureau et web : recherche, panneau de filtres (portée dossier ou boîte), tri, verdict dans la liste, « analysés seulement », export CSV/JSON ; e2e web comparé à la CLI*
-- [ ] P029 [US2] Profiler l'analyse complète d'un message (coût fixe de 3 à 4 ms mesuré) et supprimer les initialisations répétées (nettoyeur HTML, expressions, tables) — non bloquant
+- [x] P029 [US2] Profiler l'analyse complète d'un message (coût fixe de 3 à 4 ms mesuré) et supprimer les initialisations répétées (nettoyeur HTML, expressions, tables) — non bloquant — *aucune initialisation répétée : expressions compilées une fois ; coût restant = décodage d'images pour les QR codes (voir `research.md` R10)*
 
 **Checkpoint**: US1 et US2 complètes sur le bureau et en CLI ; aucun message lu sans clic
 
@@ -118,7 +118,7 @@ corpus : `tests/corpus/pst/`. Numérotation propre à la feature, préfixe `P`.
   > identique, aucune requête réseau.
 - [x] P031 `crates/mf-wasm` : `BlobSource` (fonction de lecture fournie par le Worker), API de boîte (contracts/engine-api.md, messages du Worker)
 - [x] P032 `apps/desktop/src/engine.worker.ts` + `ipc.ts` : `File` transmis une fois au Worker, `FileReaderSync` sur `File.slice`, boucles `*_step` entrecoupées de messages de progression, mêmes appels que Tauri pour l'interface
-- [ ] P033 Mesurer la mémoire de l'onglet sur la plus grosse boîte disponible ; objectif < 300 Mo (SC-004) ; consigner dans `research.md`
+- [x] P033 Mesurer la mémoire de l'onglet sur la plus grosse boîte disponible ; objectif < 300 Mo (SC-004) ; consigner dans `research.md` — *2 Go et 8 Go : < 310 Mo au pic, 210 Mo retenus ; empreinte en flux dans un tampon réutilisé (voir `research.md` R10)*
 
 ---
 

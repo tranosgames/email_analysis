@@ -9,11 +9,12 @@ import init, {
   box_filter,
   box_iocs,
   box_forget,
-  box_hash_step,
+  box_hash_feed,
   box_item,
   box_list,
   box_open,
   box_report,
+  engine_memory_bytes,
   engine_version, extract_attachment, import_key, iocs_export, list_keys, remove_key, report, safe_file_name } from "./wasm/mf_wasm.js";
 import wasmUrl from "./wasm/mf_wasm_bg.wasm?url";
 
@@ -55,25 +56,81 @@ function blobReader(file: File) {
 }
 
 const boxes = new Set<number>();
+/** Fin du calcul d'empreinte en flux, par boîte (un rapport l'attend au lieu de relire le fichier). */
+const hashing = new Map<number, Promise<void>>();
+// Mesure de la mémoire du moteur (tests de performance) : lecture seule, sans effet.
+(self as unknown as { mfEngineMemory: () => number }).mfEngineMemory = () => engine_memory_bytes();
 
-/** Empreinte de la boîte par pas de 8 Mo, entre deux messages : le Worker reste réactif. */
-function hashLoop(box: number): void {
+type Progress = { done: number; total: number; sha256: string | null; md5: string | null };
+
+/**
+ * Rend la main aux autres messages du Worker (recherche, ouverture d'un élément) : les lectures du
+ * flux se résolvent sans passer par la file des messages, une boucle de lecture les affamerait.
+ * Un message posté sur un canal passe par cette file, sans le délai minimal de `setTimeout`.
+ */
+const yieldChannel = new MessageChannel();
+function yieldToMessages(): Promise<void> {
+  return new Promise((resolve) => {
+    yieldChannel.port1.onmessage = () => resolve();
+    yieldChannel.port2.postMessage(0);
+  });
+}
+
+/**
+ * Empreinte de la boîte en flux, dans un seul tampon de 4 Mo réutilisé (lecteur « BYOB ») : aucune
+ * allocation par pas, donc pas de mémoire qui s'accumule sur un fichier de plusieurs Go (SC-004).
+ * Chaque `await` rend la main : le Worker répond aux autres demandes pendant le calcul. Si un
+ * rapport a fait avancer le calcul entre-temps, la lecture reprend là où il en est.
+ */
+async function hashLoop(box: number, file: File): Promise<void> {
+  const CHUNK = 4 * 1024 * 1024;
+  let buffer: ArrayBuffer = new ArrayBuffer(CHUNK);
   let last = 0;
-  const step = () => {
-    if (!boxes.has(box)) return;
-    try {
-      const p = JSON.parse(box_hash_step(box, 8 * 1024 * 1024)) as { done: number; total: number; sha256: string | null; md5: string | null };
-      const now = Date.now();
-      if (p.sha256 || now - last >= 100) {
-        last = now;
-        scope.postMessage({ event: "box-hash", hash: { box_id: box, ...p } });
-      }
-      if (!p.sha256) setTimeout(step, 0);
-    } catch (err) {
-      scope.postMessage({ event: "box-hash-error", box, error: err instanceof Error ? err.message : String(err) });
+  const post = (p: Progress) => {
+    const now = Date.now();
+    if (p.sha256 || now - last >= 100) {
+      last = now;
+      scope.postMessage({ event: "box-hash", hash: { box_id: box, ...p } });
     }
   };
-  setTimeout(step, 0);
+  try {
+    let p = JSON.parse(box_hash_feed(box, 0, new Uint8Array(0))) as Progress;
+    while (!p.sha256 && boxes.has(box)) {
+      const stream = file.slice(p.done).stream();
+      let pos = p.done;
+      let byob: ReadableStreamBYOBReader | null = null;
+      try {
+        byob = stream.getReader({ mode: "byob" });
+      } catch {
+        byob = null; // navigateur sans lecteur BYOB sur un Blob : morceaux alloués par le navigateur
+      }
+      const reader = byob ?? stream.getReader();
+      let resync = false;
+      for (;;) {
+        const r = byob ? await byob.read(new Uint8Array(buffer, 0, CHUNK)) : await (reader as ReadableStreamDefaultReader<Uint8Array>).read();
+        if (r.done || !r.value || !boxes.has(box)) break;
+        const chunk = r.value as Uint8Array;
+        p = JSON.parse(box_hash_feed(box, pos, chunk)) as Progress;
+        if (byob) buffer = chunk.buffer as ArrayBuffer; // le tampon revient, prêt à resservir
+        pos += chunk.byteLength;
+        post(p);
+        if (p.sha256) break;
+        if (p.done !== pos) {
+          resync = true; // un rapport a déjà fait avancer le calcul
+          break;
+        }
+        await yieldToMessages();
+      }
+      await reader.cancel().catch(() => undefined);
+      if (!resync && !p.sha256 && boxes.has(box)) {
+        // Fin du flux sans fin de calcul : fichier raccourci pendant la lecture.
+        throw new Error("le fichier a changé pendant le calcul d'empreinte");
+      }
+    }
+    if (p.sha256) post(p);
+  } catch (err) {
+    scope.postMessage({ event: "box-hash-error", box, error: err instanceof Error ? err.message : String(err) });
+  }
 }
 
 /** `self` d'un worker dédié (le tsconfig cible le DOM, pas WebWorker). */
@@ -120,7 +177,7 @@ self.onmessage = async (e: MessageEvent<Job>) => {
     } else if (job.kind === "box-open") {
       const opened = JSON.parse(box_open(job.box, job.name, blobReader(job.file)));
       boxes.add(job.box);
-      hashLoop(job.box);
+      hashing.set(job.box, hashLoop(job.box, job.file));
       scope.postMessage({ id: job.id, ok: true, json: opened });
     } else if (job.kind === "box-list") {
       scope.postMessage({ id: job.id, ok: true, json: JSON.parse(box_list(job.box, job.folder)) });
@@ -131,6 +188,9 @@ self.onmessage = async (e: MessageEvent<Job>) => {
     } else if (job.kind === "box-item") {
       scope.postMessage({ id: job.id, ok: true, view: JSON.parse(box_item(job.box, job.item)) });
     } else if (job.kind === "box-report") {
+      // Le rapport porte l'empreinte de la boîte : on attend le calcul en flux déjà lancé (les
+      // autres demandes continuent d'être servies pendant ce temps).
+      await hashing.get(job.box);
       scope.postMessage({ id: job.id, ok: true, text: box_report(job.box, job.item, new Uint32Array(job.path), job.format, job.generated) });
     } else if (job.kind === "box-extract") {
       const data = box_extract(job.box, job.item, new Uint32Array(job.path), job.index);

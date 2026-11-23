@@ -42,6 +42,22 @@ impl StreamHasher {
         (self.done, self.total)
     }
 
+    /// Ajoute des octets lus ailleurs (flux du navigateur), s'ils commencent exactement là où
+    /// le calcul en est ; sinon rien n'est fait et l'appelant reprend à `progress().0`.
+    pub fn feed(&mut self, offset: u64, data: &[u8]) -> Option<Digests> {
+        if offset != self.done || self.done >= self.total {
+            return None;
+        }
+        let take = usize::try_from((self.total - self.done).min(data.len() as u64)).unwrap_or(0);
+        self.sha.update(&data[..take]);
+        self.md5.update(&data[..take]);
+        self.done += take as u64;
+        (self.done >= self.total).then(|| Digests {
+            sha256: hex(&std::mem::take(&mut self.sha).finalize()),
+            md5: hex(&std::mem::take(&mut self.md5).finalize()),
+        })
+    }
+
     /// Lit au plus `budget` octets ; retourne les empreintes une fois le fichier entièrement lu.
     pub fn step(&mut self, src: &mut dyn ByteSource, budget: u64) -> io::Result<Option<Digests>> {
         let end = self.total.min(self.done.saturating_add(budget.max(1)));
@@ -66,6 +82,33 @@ impl StreamHasher {
             sha256: hex(&std::mem::take(&mut self.sha).finalize()),
             md5: hex(&std::mem::take(&mut self.md5).finalize()),
         }))
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod feed_tests {
+    use super::*;
+    use crate::source::MemSource;
+
+    #[test]
+    fn feed_matches_step_and_resyncs() {
+        let data: Vec<u8> = (0..3_000_000u32).map(|i| (i % 253) as u8).collect();
+        let want = digests(&mut MemSource(data.clone())).unwrap();
+        let mut h = StreamHasher::new(data.len() as u64);
+        assert!(h.feed(0, &data[..1000]).is_none());
+        // Mauvaise position : ignorée, la progression ne bouge pas.
+        assert!(h.feed(5000, &data[5000..6000]).is_none());
+        assert_eq!(h.progress().0, 1000);
+        // Un pas lu par la source avance aussi ; le flux reprend où il faut.
+        assert!(
+            h.step(&mut MemSource(data.clone()), 500_000)
+                .unwrap()
+                .is_none()
+        );
+        let at = h.progress().0 as usize;
+        let got = h.feed(at as u64, &data[at..]).unwrap();
+        assert_eq!(got, want);
     }
 }
 

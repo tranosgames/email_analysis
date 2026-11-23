@@ -250,6 +250,17 @@ pub fn box_hash_step(id: u32, budget: f64) -> Result<String, JsError> {
     })
 }
 
+/// Avance l'empreinte avec des octets lus en flux par le Worker à partir de `offset` (tampon
+/// réutilisé : aucune allocation par pas). Retourne la progression ; si elle ne vaut pas
+/// `offset + data.len()`, le Worker reprend la lecture à `done`.
+#[wasm_bindgen]
+pub fn box_hash_feed(id: u32, offset: f64, data: &[u8]) -> Result<String, JsError> {
+    with_box(id, |s| {
+        let p = s.hash_feed(offset.max(0.0) as u64, data);
+        serde_json::to_string(&p).map_err(js_err)
+    })
+}
+
 /// Rapport d'un élément ; l'empreinte de la boîte doit être calculée (le Worker s'en charge).
 #[wasm_bindgen]
 pub fn box_report(
@@ -319,6 +330,19 @@ pub fn box_forget(id: u32) {
             s.forget_analyses();
         }
     });
+}
+
+/// Taille de la mémoire WebAssembly du moteur, en octets (mesures, SC-004).
+#[wasm_bindgen]
+pub fn engine_memory_bytes() -> f64 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        (core::arch::wasm32::memory_size(0) as f64) * 65536.0
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        0.0
+    }
 }
 
 /// Ferme une boîte et libère sa mémoire.
