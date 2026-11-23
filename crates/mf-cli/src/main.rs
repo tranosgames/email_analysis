@@ -754,6 +754,25 @@ enum PstCmd {
     Bench { file: PathBuf },
 }
 
+/// Ligne lisible d'un élément ou dossier illisible.
+fn unreadable_line(u: &mf_core::UnreadableItem) -> String {
+    if u.kind == "store" {
+        return u.reason.clone();
+    }
+    let what = match u.kind.as_str() {
+        "folder" => "dossier",
+        "item" => "élément",
+        "attachment" => "pièce jointe",
+        other => other,
+    };
+    let path = if u.folder_path.is_empty() {
+        String::new()
+    } else {
+        format!(" « {} »", u.folder_path.join(" › "))
+    };
+    format!("{what} #{}{path} : {}", u.node_id, u.reason)
+}
+
 /// Filtres de `mf pst ls` (FR-007) : colonnes des tables de dossiers.
 #[derive(clap::Args, Debug, Default)]
 struct BoxFilterArgs {
@@ -909,13 +928,7 @@ fn pst_cmd(cmd: PstCmd, json: bool, keys: &mf_engine::Keyring) -> Result<(), Str
                 i.unreadable.len()
             );
             for u in &i.unreadable {
-                println!(
-                    "  ⚠ {} {:#x} ({}) : {}",
-                    u.kind,
-                    u.node_id,
-                    u.folder_path.join(" › "),
-                    u.reason
-                );
+                println!("  ⚠ {}", unreadable_line(u));
             }
         }
         PstCmd::Tree { file } => {
@@ -964,9 +977,13 @@ fn pst_cmd(cmd: PstCmd, json: bool, keys: &mf_engine::Keyring) -> Result<(), Str
                 Some(_) => pick_folders(&s, &folder)?.first().copied(),
                 None => None,
             };
-            let rows = s
-                .filter(&filter.to_filter(folder)?)
+            let (rows, skipped) = s
+                .filter_report(&filter.to_filter(folder)?)
                 .map_err(|e| e.to_string())?;
+            // Dossiers illisibles : signalés sur la sortie d'erreur, la sortie JSON reste la liste.
+            for u in &skipped {
+                eprintln!("⚠ ignoré, {}", unreadable_line(u));
+            }
             if json {
                 return print(&rows);
             }

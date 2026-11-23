@@ -316,7 +316,15 @@ export interface StoreInfo {
   display_name: string | null;
   folders: number;
   items: number;
-  unreadable: { node_id: number; folder_path: string[]; kind: string; reason: string }[];
+  unreadable: UnreadableItem[];
+}
+
+/** Dossier, élément ou boîte illisible : signalé, jamais masqué (FR-009). `store` : la boîte entière (tronquée). */
+export interface UnreadableItem {
+  node_id: number;
+  folder_path: string[];
+  kind: "store" | "folder" | "item" | "attachment" | string;
+  reason: string;
 }
 
 export interface FolderInfo {
@@ -815,10 +823,16 @@ export interface BoxFilter {
   from_domain?: string | null;
 }
 
+/** Résultat d'un filtre : lignes trouvées et dossiers illisibles ignorés (FR-009). */
+export interface FilterResult {
+  rows: ItemSummary[];
+  unreadable: UnreadableItem[];
+}
+
 /** Lignes correspondant au filtre, sans ouvrir aucun élément. */
-export async function boxFilter(boxId: number, filter: BoxFilter): Promise<ItemSummary[]> {
-  if (!inTauri) return (await boxAsk({ kind: "box-filter", box: boxId, filter: JSON.stringify(filter) })).json as ItemSummary[];
-  return invoke<ItemSummary[]>("box_filter", { boxId, filter });
+export async function boxFilter(boxId: number, filter: BoxFilter): Promise<FilterResult> {
+  if (!inTauri) return (await boxAsk({ kind: "box-filter", box: boxId, filter: JSON.stringify(filter) })).json as FilterResult;
+  return invoke<FilterResult>("box_filter", { boxId, filter });
 }
 
 /** Indicateurs des éléments ouverts de la boîte, avec la provenance de chacun. */

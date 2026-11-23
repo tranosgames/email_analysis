@@ -227,7 +227,7 @@ fn box_filter(
     box_id: usize,
     filter: mf_core::BoxFilter,
     state: tauri::State<'_, AppState>,
-) -> Result<Vec<ItemSummary>, String> {
+) -> Result<mailbox::FilterResult, String> {
     with_box(&state, box_id, |h| {
         mailbox::ask(h, |reply| mailbox::Req::Filter { filter, reply })
     })

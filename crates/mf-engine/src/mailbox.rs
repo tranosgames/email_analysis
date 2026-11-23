@@ -4,7 +4,10 @@
 
 use crate::filter::Compiled;
 use crate::{Analyzed, expand_attached_messages};
-use mf_core::{BoxFilter, EngineError, Evidence, FolderInfo, Format, Ioc, ItemSummary, StoreInfo};
+use mf_core::{
+    BoxFilter, EngineError, Evidence, FolderInfo, Format, Ioc, ItemSummary, StoreInfo,
+    UnreadableItem,
+};
 use mf_pst::hash::{Digests, StreamHasher};
 use mf_pst::{ByteSource, PstBox};
 use mf_sig::Keyring;
@@ -34,6 +37,9 @@ pub struct BoxSession {
     item_class: HashMap<u32, String>,
     /// Lignes des tables de dossiers déjà lues (une seule lecture par dossier).
     rows: HashMap<u32, Vec<ItemSummary>>,
+    /// Dossiers et éléments devenus illisibles pendant la session (boîte tronquée, nœud abîmé) :
+    /// signalés, jamais ignorés en silence (FR-009).
+    late_unreadable: Vec<UnreadableItem>,
     analyzed: HashMap<u32, Analyzed>,
 }
 
@@ -93,6 +99,7 @@ impl BoxSession {
             item_folder: HashMap::new(),
             item_class: HashMap::new(),
             rows: HashMap::new(),
+            late_unreadable: Vec::new(),
             analyzed: HashMap::new(),
         })
     }
@@ -133,7 +140,28 @@ impl BoxSession {
         if self.rows.contains_key(&folder) {
             return Ok(());
         }
-        let rows = self.pst.list(folder).map_err(pst_err)?;
+        let rows = match self.pst.list(folder) {
+            Ok(rows) => rows,
+            Err(e) => {
+                self.note_unreadable(folder, "folder", folder, &e.to_string());
+                return Err(pst_err(e));
+            }
+        };
+        // Table abîmée : des lignes peuvent manquer sans erreur. Le dossier annonce son nombre
+        // d'éléments ; s'il en manque, le dossier est signalé comme partiellement lisible.
+        let announced = self
+            .pst
+            .folders()
+            .iter()
+            .find(|f| f.id == folder)
+            .map_or(0, |f| f.item_count as usize);
+        if rows.len() < announced {
+            let reason = format!(
+                "table du dossier partiellement illisible : {} ligne(s) lue(s) sur {announced} annoncée(s)",
+                rows.len()
+            );
+            self.note_unreadable(folder, "folder", folder, &reason);
+        }
         for r in &rows {
             self.item_folder.insert(r.id, folder);
             if let Some(c) = &r.message_class {
@@ -148,6 +176,14 @@ impl BoxSession {
     /// puis des tables. Seules les tables sont lues ; un critère sur les éléments ouverts ne
     /// parcourt que les dossiers où des éléments ont été ouverts.
     pub fn filter(&mut self, f: &BoxFilter) -> Result<Vec<ItemSummary>, EngineError> {
+        Ok(self.filter_report(f)?.0)
+    }
+
+    /// Comme [`Self::filter`], avec les dossiers illisibles qui n'ont pas pu être parcourus.
+    pub fn filter_report(
+        &mut self,
+        f: &BoxFilter,
+    ) -> Result<(Vec<ItemSummary>, Vec<UnreadableItem>), EngineError> {
         let folders: Vec<u32> = match f.folder {
             Some(id) => vec![id],
             None if f.needs_analysis() => {
@@ -165,8 +201,11 @@ impl BoxSession {
         };
         let compiled = Compiled::new(f);
         let mut out = Vec::new();
+        let mut skipped = Vec::new();
         for folder in folders {
-            // Un dossier illisible ne bloque pas la recherche dans les autres (FR-009).
+            // Un dossier illisible ne bloque pas la recherche dans les autres (FR-009) ; il est
+            // rendu à l'appelant pour être signalé, comme un dossier lu en partie.
+            skipped.push(folder);
             if self.load(folder).is_err() {
                 continue;
             }
@@ -183,7 +222,8 @@ impl BoxSession {
                 }
             }
         }
-        Ok(out)
+        let skipped = self.unreadable_folders_in(&skipped);
+        Ok((out, skipped))
     }
 
     /// Dossiers parcourus par une recherche sur toute la boîte : tous sauf les dossiers de
@@ -194,6 +234,45 @@ impl BoxSession {
             .iter()
             .filter(|f| f.kind != "search")
             .map(|f| f.id)
+            .collect()
+    }
+
+    fn note_unreadable(&mut self, node_id: u32, kind: &str, folder: u32, reason: &str) {
+        if self
+            .late_unreadable
+            .iter()
+            .any(|u| u.node_id == node_id && u.kind == kind)
+        {
+            return;
+        }
+        let folder_path = self
+            .pst
+            .folders()
+            .iter()
+            .find(|f| f.id == folder)
+            .map(|f| f.path.clone())
+            .unwrap_or_default();
+        self.late_unreadable.push(UnreadableItem {
+            node_id,
+            folder_path,
+            kind: kind.into(),
+            reason: reason.into(),
+        });
+    }
+
+    /// Tout ce qui est illisible : relevé à l'ouverture, puis en cours de session.
+    pub fn unreadable(&self) -> Vec<UnreadableItem> {
+        let mut all = self.pst.info().unreadable.clone();
+        all.extend(self.late_unreadable.iter().cloned());
+        all
+    }
+
+    /// Dossiers illisibles ou lus en partie parmi `folders`.
+    pub fn unreadable_folders_in(&self, folders: &[u32]) -> Vec<UnreadableItem> {
+        self.late_unreadable
+            .iter()
+            .filter(|u| u.kind == "folder" && folders.contains(&u.node_id))
+            .cloned()
             .collect()
     }
 
@@ -257,7 +336,13 @@ impl BoxSession {
                 .as_ref()
                 .map(|d| d.sha256.clone())
                 .unwrap_or_default();
-            let mut message = self.pst.open_item(id, folder, &sha).map_err(pst_err)?;
+            let mut message = match self.pst.open_item(id, folder, &sha) {
+                Ok(m) => m,
+                Err(e) => {
+                    self.note_unreadable(id, "item", folder.unwrap_or(0), &e.to_string());
+                    return Err(pst_err(e));
+                }
+            };
             expand_attached_messages(&mut message, 0);
             mf_analysis::analyze_with(&mut message, keys);
             if !is_mail(self.item_class.get(&id).map(String::as_str)) {

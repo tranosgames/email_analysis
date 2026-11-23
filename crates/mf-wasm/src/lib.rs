@@ -211,8 +211,9 @@ pub fn box_list(id: u32, folder: u32) -> Result<String, JsError> {
 pub fn box_filter(id: u32, filter_json: &str) -> Result<String, JsError> {
     let filter: mf_core::BoxFilter = serde_json::from_str(filter_json).map_err(js_err)?;
     with_box(id, |s| {
-        let rows = s.filter(&filter).map_err(js_err)?;
-        serde_json::to_string(&rows).map_err(js_err)
+        let (rows, unreadable) = s.filter_report(&filter).map_err(js_err)?;
+        serde_json::to_string(&serde_json::json!({ "rows": rows, "unreadable": unreadable }))
+            .map_err(js_err)
     })
 }
 

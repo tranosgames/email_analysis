@@ -35,6 +35,8 @@ import {
 import { filterCount, type BoxSort, type BoxState, type MessageHandler } from "./MessageHandler";
 import { renderReading, type Crumb } from "./views/reading";
 
+const UNREADABLE_KIND: Record<string, string> = { folder: "dossier", item: "élément", attachment: "pièce jointe" };
+
 /** Hauteur fixe d'une ligne de la liste virtualisée (px), alignée sur `.box-row`. */
 const ROW = 76;
 
@@ -222,15 +224,19 @@ export class UIManager {
       b.hash?.sha256 ? null : h("div", { class: "box-meta box-hash", title: "Calcul de l'empreinte de la boîte" }, `Empreinte de la boîte : ${pct} %`),
       h("div", { class: "box-meta box-read" }, `${read} élément(s) lu(s) sur ${b.store.items} — seuls les éléments ouverts sont lus`),
       ...this.boxTools(b, folder),
-      b.store.unreadable.length
+      // Boîte tronquée : toujours visible, c'est la première chose à savoir sur la preuve.
+      ...b.store.unreadable.filter((u) => u.kind === "store").map((u) => h("div", { class: "box-meta bad box-truncated", role: "alert" }, `⚠ ${u.reason}`)),
+      b.store.unreadable.some((u) => u.kind !== "store")
         ? h(
             "details",
             { class: "box-meta bad" },
-            h("summary", {}, `${b.store.unreadable.length} élément(s) illisible(s)`),
+            h("summary", {}, `${b.store.unreadable.filter((u) => u.kind !== "store").length} élément(s) ou dossier(s) illisible(s)`),
             h(
               "ul",
               { class: "box-unreadable" },
-              ...b.store.unreadable.map((u) => h("li", {}, `${u.folder_path.join(" › ") || "(racine)"} — ${u.kind} #${u.node_id} : ${u.reason}`)),
+              ...b.store.unreadable
+                .filter((u) => u.kind !== "store")
+                .map((u) => h("li", {}, `${UNREADABLE_KIND[u.kind] ?? u.kind} #${u.node_id}${u.folder_path.length ? ` « ${u.folder_path.join(" › ")} »` : ""} : ${u.reason}`)),
             ),
           )
         : null,
@@ -449,6 +455,7 @@ export class UIManager {
           "div",
           { class: "box-meta box-results", role: "status" },
           `${b.results.length} résultat(s) — ${scope}, tables des dossiers seulement`,
+          b.skipped ? h("span", { class: "bad" }, ` · ${b.skipped} dossier(s) illisible(s) ignoré(s), voir la liste ci-dessus`) : null,
         ),
       );
     }
@@ -465,10 +472,11 @@ export class UIManager {
       return;
     }
     try {
-      const rows = await boxFilter(b.boxId, filter);
+      const res = await boxFilter(b.boxId, filter);
       if (seq !== this.filterSeq) return;
       this.list.scrollTop = 0;
-      this.state.setResults(b.boxId, filter, rows);
+      this.state.noteUnreadable(b.boxId, res.unreadable);
+      this.state.setResults(b.boxId, filter, res.rows, res.unreadable.length);
     } catch (e) {
       toast(`Recherche impossible : ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -652,7 +660,10 @@ export class UIManager {
       s.setRows(boxId, folder, rows);
       this.list.scrollTop = 0;
     } catch (e) {
-      toast(`Dossier illisible : ${e instanceof Error ? e.message : String(e)}`);
+      const reason = e instanceof Error ? e.message : String(e);
+      toast(`Dossier illisible : ${reason}`);
+      const f = s.box(boxId)?.folders.find((x) => x.id === folder);
+      s.noteUnreadable(boxId, [{ node_id: folder, folder_path: f?.path ?? [], kind: "folder", reason }]);
       s.setRows(boxId, folder, []);
     }
   }
@@ -667,7 +678,11 @@ export class UIManager {
       try {
         root = await boxItem(boxId, id);
       } catch (e) {
-        if (token === this.renderToken) this.reading.replaceChildren(h("p", { class: "empty-state" }, `Ouverture impossible : ${String(e)}`));
+        const reason = e instanceof Error ? e.message : String(e);
+        if (token === this.renderToken) this.reading.replaceChildren(h("p", { class: "empty-state" }, `Élément illisible : ${reason}`));
+        const row = [...(s.box(boxId)?.rows.values() ?? [])].flat().find((r) => r.id === id);
+        const f = row ? s.box(boxId)?.folders.find((x) => x.id === row.folder) : undefined;
+        s.noteUnreadable(boxId, [{ node_id: id, folder_path: f?.path ?? [], kind: "item", reason }]);
         return;
       }
       this.boxCache.set(key, root);

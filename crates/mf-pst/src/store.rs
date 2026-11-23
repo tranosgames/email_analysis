@@ -140,6 +140,82 @@ pub struct PstBox {
     items_read: Cell<u64>,
 }
 
+/// Ce que l'en-tête dit du fichier, lu avant la bibliothèque PST pour expliquer un échec (P036).
+pub(crate) struct FileHead {
+    size: u64,
+    magic: bool,
+    version: Option<u16>,
+    /// Taille annoncée par l'en-tête (`ibFileEof`).
+    eof: Option<u64>,
+}
+
+impl FileHead {
+    fn read(src: &mut dyn ByteSource, size: u64) -> Self {
+        let mut b = [0u8; 0xC0];
+        let got = src.read_at(0, &mut b).unwrap_or(0);
+        let magic = got >= 4 && &b[..4] == b"!BDN";
+        let version = (got >= 0x0C).then(|| u16::from_le_bytes([b[0x0A], b[0x0B]]));
+        let eof = match version {
+            // ANSI : `ibFileEof` sur 32 bits à 0xA8 ; Unicode et OST 4 Ko : 64 bits à 0xB8.
+            Some(14 | 15) if got >= 0xAC => Some(u64::from(u32::from_le_bytes([
+                b[0xA8], b[0xA9], b[0xAA], b[0xAB],
+            ]))),
+            Some(_) if got >= 0xC0 => {
+                let mut x = [0u8; 8];
+                x.copy_from_slice(&b[0xB8..0xC0]);
+                Some(u64::from_le_bytes(x))
+            }
+            _ => None,
+        };
+        Self {
+            size,
+            magic,
+            version,
+            eof,
+        }
+    }
+
+    /// Fichier plus court que la taille annoncée.
+    fn truncation(&self) -> Option<String> {
+        let eof = self.eof?;
+        (self.magic && self.size < eof).then(|| {
+            format!(
+                "boîte tronquée : {} octets présents sur {} annoncés par l'en-tête ({:.0} %) ; les éléments au-delà de la coupure sont illisibles",
+                self.size,
+                eof,
+                (self.size as f64) * 100.0 / (eof as f64)
+            )
+        })
+    }
+
+    /// Message d'échec explicite : pas une boîte Outlook, version inconnue, fichier tronqué, ou
+    /// format non pris en charge (avec le détail technique).
+    fn explain(&self, name: &str, detail: &str) -> PstError {
+        let why = if self.size < 0x200 {
+            format!(
+                "fichier trop court ({} octets) pour être une boîte Outlook",
+                self.size
+            )
+        } else if !self.magic {
+            "signature « !BDN » absente : ce n'est pas une boîte Outlook".to_string()
+        } else if let (Some(eof), true) = (self.eof, self.truncation().is_some()) {
+            format!(
+                "boîte tronquée : {} octets présents sur {eof} annoncés par l'en-tête ({:.0} %), l'arborescence elle-même est au-delà de la coupure",
+                self.size,
+                (self.size as f64) * 100.0 / (eof.max(1) as f64)
+            )
+        } else {
+            match self.version {
+                Some(14 | 15 | 23 | 36) | None => {
+                    format!("format non pris en charge ou fichier endommagé ({detail})")
+                }
+                Some(v) => format!("format non pris en charge : version {v} de l'en-tête inconnue"),
+            }
+        };
+        PstError(format!("{name} : {why}"))
+    }
+}
+
 impl PstBox {
     /// Ouvre une boîte : en-tête, propriétés de la boîte et arborescence des dossiers seulement.
     /// `make_source` fournit une nouvelle source sur le même fichier à chaque appel (deux essais
@@ -149,8 +225,9 @@ impl PstBox {
         name: &str,
     ) -> Result<Self, PstError> {
         let stats = Rc::new(ReadStats::default());
-        let src = make_source()?;
+        let mut src = make_source()?;
         let size = src.len();
+        let head = FileHead::read(src.as_mut(), size);
         match UnicodePstFile::read_from(Box::new(Paged::new(src, stats.clone()))) {
             Ok(f) => {
                 let format = if f.header().version() == NdbVersion::Unicode4k {
@@ -159,20 +236,20 @@ impl PstBox {
                     "unicode"
                 };
                 let enc = f.header().crypt_method();
-                let store: Rc<dyn Store> = UnicodeStore::read(Rc::new(f))?;
-                Self::finish(store, format, enc, name, size, stats)
+                let store: Rc<dyn Store> = UnicodeStore::read(Rc::new(f))
+                    .map_err(|e| head.explain(name, &e.to_string()))?;
+                Self::finish(store, format, enc, name, size, stats, &head)
             }
             Err(unicode_err) => {
                 let src = make_source()?;
                 match AnsiPstFile::read_from(Box::new(Paged::new(src, stats.clone()))) {
                     Ok(f) => {
                         let enc = f.header().crypt_method();
-                        let store: Rc<dyn Store> = AnsiStore::read(Rc::new(f))?;
-                        Self::finish(store, "ansi", enc, name, size, stats)
+                        let store: Rc<dyn Store> = AnsiStore::read(Rc::new(f))
+                            .map_err(|e| head.explain(name, &e.to_string()))?;
+                        Self::finish(store, "ansi", enc, name, size, stats, &head)
                     }
-                    Err(_) => Err(PstError(format!(
-                        "{name} : n'est pas une boîte PST/OST lisible ({unicode_err})"
-                    ))),
+                    Err(_) => Err(head.explain(name, &unicode_err.to_string())),
                 }
             }
         }
@@ -185,6 +262,7 @@ impl PstBox {
         name: &str,
         size: u64,
         stats: Rc<ReadStats>,
+        head: &FileHead,
     ) -> Result<Self, PstError> {
         let props = store.properties();
         // 0 = aucun mot de passe ; les OST portent 0xFFFFFFFF, valeur neutre.
@@ -221,6 +299,19 @@ impl PstBox {
             .map(|f| u64::from(f.item_count))
             .sum();
         info.unreadable = unreadable;
+        // Boîte tronquée mais dont l'arborescence se lit : signalée en tête des éléments illisibles,
+        // les dossiers et éléments au-delà de la coupure le seront à leur ouverture (FR-009).
+        if let Some(reason) = head.truncation() {
+            info.unreadable.insert(
+                0,
+                UnreadableItem {
+                    node_id: 0,
+                    folder_path: Vec::new(),
+                    kind: "store".into(),
+                    reason,
+                },
+            );
+        }
         b.folders = folders;
         b.info = info;
         Ok(b)

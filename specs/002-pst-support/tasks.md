@@ -128,7 +128,7 @@ corpus : `tests/corpus/pst/`. Numérotation propre à la feature, préfixe `P`.
 
 - [x] P034 Test : P005 étendu aux 3 OST du corpus (doit échouer) — *fait avec le lecteur intégré : les 4 OST du corpus sont comparés à libpff (`counts_match_libpff`)*
 - [x] P035 `vendor/outlook-pst` : en-tête OST (magic `SO`), taille de page paramétrée par le type de fichier, tailles de blocs, décompression des blocs (`flate2`) ; consigner dans `NOTICE.md` — *apporté par les correctifs `outlook-pst-ost` intégrés dans `vendor/outlook-pst` (voir `NOTICE.md`)*
-- [ ] P036 Repli : si la lecture d'un OST échoue, message explicite « format non pris en charge » sans bloquer le reste (FR-009) ; test sur un OST tronqué
+- [x] P036 Repli : si la lecture d'un OST échoue, message explicite « format non pris en charge » sans bloquer le reste (FR-009) ; test sur un OST tronqué — *`crates/mf-engine/tests/truncated.rs` : raison explicite lue dans l'en-tête (trop court, pas de « !BDN », version inconnue, tronquée à n %) ; ouverture partielle avec la coupure signalée ; dossiers illisibles ou tables lues en partie et éléments illisibles signalés (Enron abîmée : 1 708 lus + 29 illisibles + 441 signalés = 2 178) ; e2e web : boîte tronquée parmi d'autres fichiers*
 
 **Checkpoint**: P005 vert pour tous les PST et OST
 

@@ -20,7 +20,7 @@ pub enum Req {
     /// Filtre sur les tables de dossiers (FR-007) : aucun élément lu.
     Filter {
         filter: BoxFilter,
-        reply: Reply<Vec<ItemSummary>>,
+        reply: Reply<FilterResult>,
     },
     /// Indicateurs des éléments ouverts, avec leur provenance (FR-013).
     Iocs {
@@ -49,6 +49,13 @@ pub enum Req {
     },
     /// Nouveau trousseau : les analyses seront refaites à la prochaine ouverture.
     Forget,
+}
+
+/// Lignes trouvées et dossiers illisibles ignorés (FR-009).
+#[derive(Serialize)]
+pub struct FilterResult {
+    rows: Vec<ItemSummary>,
+    unreadable: Vec<mf_core::UnreadableItem>,
 }
 
 pub struct BoxHandle {
@@ -134,7 +141,11 @@ fn run(mut s: BoxSession, rx: Receiver<Req>, box_id: usize, app: AppHandle) {
                 let _ = reply.send(s.list(folder).map_err(|e| e.to_string()));
             }
             Req::Filter { filter, reply } => {
-                let _ = reply.send(s.filter(&filter).map_err(|e| e.to_string()));
+                let r = s
+                    .filter_report(&filter)
+                    .map(|(rows, unreadable)| FilterResult { rows, unreadable })
+                    .map_err(|e| e.to_string());
+                let _ = reply.send(r);
             }
             Req::Iocs { reply } => {
                 let groups = s

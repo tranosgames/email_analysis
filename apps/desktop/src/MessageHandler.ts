@@ -45,6 +45,8 @@ export interface BoxState {
   filter: BoxFilter;
   /** Résultat du filtre affiché, ou null si aucun filtre n'est appliqué. */
   results: ItemSummary[] | null;
+  /** Dossiers illisibles ignorés par le dernier filtre. */
+  skipped: number;
 }
 
 /** Ce que montre le panneau de gauche. */
@@ -101,6 +103,7 @@ export class MessageHandler {
           sort: "date-desc",
           filter: {},
           results: null,
+          skipped: 0,
         });
         boxes++;
       } else if (r.kind === "duplicate") dup++;
@@ -197,12 +200,27 @@ export class MessageHandler {
     this.emit();
   }
 
+  /** Ajoute des éléments illisibles rencontrés en cours de session (sans doublon). */
+  noteUnreadable(boxId: number, items: import("./ipc").UnreadableItem[]): void {
+    const b = this.box(boxId);
+    if (!b) return;
+    let added = false;
+    for (const u of items) {
+      if (!b.store.unreadable.some((x) => x.node_id === u.node_id && x.kind === u.kind)) {
+        b.store.unreadable.push(u);
+        added = true;
+      }
+    }
+    if (added) this.emit();
+  }
+
   /** Résultat d'un filtre (null : retour à la navigation par dossier). */
-  setResults(boxId: number, filter: BoxFilter, results: ItemSummary[] | null): void {
+  setResults(boxId: number, filter: BoxFilter, results: ItemSummary[] | null, skipped = 0): void {
     const b = this.box(boxId);
     if (!b) return;
     b.filter = filter;
     b.results = results;
+    b.skipped = skipped;
     this.emit();
   }
 

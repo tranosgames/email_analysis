@@ -14,6 +14,7 @@ import functools
 import hashlib
 import http.server
 import json
+import tempfile
 import pathlib
 import subprocess
 import sys
@@ -207,11 +208,17 @@ def main() -> int:
         # Dépôt via le sélecteur de fichiers (même chemin de code que le glisser-déposer).
         with page.expect_file_chooser() as fc:
             page.click("#open-files")
-        fc.value.set_files([str(p) for p in MAILS] + [str(BROKEN)])
+        # P036 : une boîte tronquée parmi les fichiers ouverts ne bloque pas les autres.
+        cut_pst = pathlib.Path(tempfile.mkdtemp()) / "boite-tronquee.pst"
+        cut_pst.write_bytes(SUPPORT_PST.read_bytes()[: 1_033_216 * 30 // 100])
+        fc.value.set_files([str(p) for p in MAILS] + [str(BROKEN), str(cut_pst)])
         page.wait_for_selector(".message-item.failed")
         items = page.locator(".message-item:not(.failed)")
         check(items.count() == len(MAILS), f"{len(MAILS)} messages listés")
-        check("Illisible" in page.locator(".message-item.failed").inner_text(), "fichier OLE tronqué listé en erreur")
+        failed = page.locator(".message-item.failed")
+        check(failed.count() == 2 and "Illisible" in failed.first.inner_text(), "fichier OLE tronqué listé en erreur")
+        txt = page.locator(".message-item.failed", has_text="boite-tronquee.pst").inner_text()
+        check("tronquée" in txt and "30 %" in txt, f"boîte tronquée : raison explicite, les autres fichiers sont ouverts ({txt.splitlines()[-1][:90]})")
 
         # Concordance avec la CLI pour chaque message.
         for i in range(items.count()):
