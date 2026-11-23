@@ -155,7 +155,7 @@ corpus : `tests/corpus/pst/`. Numérotation propre à la feature, préfixe `P`.
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-- [ ] P042 [P] Fuzzing : cible `pst_open` (`fuzz/`) sur le chemin d'ouverture et de parcours ; corpus de départ = PST du corpus
+- [x] P042 [P] Fuzzing : cible `pst_open` (`fuzz/`) sur le chemin d'ouverture et de parcours ; corpus de départ = PST du corpus — *`fuzz/fuzz_targets/pst_open.rs` (ouverture, arborescence, tables, filtre, éléments, export .msg, empreinte), AddressSanitizer : 84 056 exécutions en 25 min (graines de 64 Ko à 1 Mo), aucune panique, erreur mémoire ni dépassement de temps ; 1 996 nouvelles entrées de couverture*
 - [ ] P043 [P] Proposer les correctifs (tolérance, OST) en amont à `outlook-pst` ; consigner l'état dans `NOTICE.md` — *préparé, non soumis : `vendor/outlook-pst/upstream-proposal/` (patch contre `main` cfb721d, 11 tests amont réussis, texte de la demande en anglais) ; état consigné dans `NOTICE.md`. Le correctif officiel d0f9f00 (blocage de `root_hierarchy_table`) a été repris dans notre copie. Soumission : décision du mainteneur*
 - [x] P044 [P] README et documentation projet : PST/OST, mesures, limites ; capture d'écran — *README : boîtes, recherche, export, empreinte de l'élément, limites ; captures `apercu-pst*.png` ; mesures dans `research.md` R10 et `quickstart.md`*
 - [ ] P045 Valider SC-003 sur une boîte volumineuse fournie par l'utilisateur (`mf pst bench` + page web) ; consigner les mesures

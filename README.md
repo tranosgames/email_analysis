@@ -246,6 +246,15 @@ npm run test:web     # end-to-end tests in a real browser
 npm run test:box     # PST mailbox interface, with a simulated backend
 ```
 
+Fuzzing of the mailbox reader (opening, tree, tables, items, export) with
+[cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz):
+
+```console
+cd fuzz
+mkdir -p corpus/pst_open && cp ../tests/corpus/pst/*.pst corpus/pst_open/
+cargo +nightly fuzz run pst_open corpus/pst_open -- -max_len=1100000
+```
+
 The web version also needs the `wasm32-unknown-unknown` target and `wasm-bindgen-cli` 0.2.129.
 Every push to `main` publishes the web page.
 
