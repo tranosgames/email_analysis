@@ -137,8 +137,11 @@ def check_box(page, path: pathlib.Path, folder_name: str) -> None:
         both = mf_pst("ls", "--attachments", "--from-name", word, path)
         page.fill("input[data-keep='from_name']", word)
         page.press("input[data-keep='from_name']", "Enter")
-        page.wait_for_selector(f".box-results:has-text('{len(both)} résultat(s)')", timeout=15000)
-        check("Filtres (2)" in page.locator(".box-tools").first.inner_text(), f"{name} : expéditeur « {word} » + pièces jointes = {len(both)}, comme la CLI")
+        # Attendre que les deux critères soient appliqués : le compte seul peut déjà être affiché par
+        # le filtre précédent (support.pst : 1 élément avec pièce jointe, 1 aussi avec l'expéditeur).
+        page.wait_for_selector(".box-tools button:has-text('Filtres (2)')", timeout=15000)
+        got = page.locator(".box-results").inner_text()
+        check(f"{len(both)} résultat(s)" in got, f"{name} : expéditeur « {word} » + pièces jointes = {len(both)}, comme la CLI ({got})")
         page.fill("input[data-keep='from_name']", "")
         page.press("input[data-keep='from_name']", "Enter")
     page.select_option("select[data-keep='has_attachments']", "")
