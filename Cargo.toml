@@ -1,6 +1,6 @@
 [workspace]
 # Copie embarquée, compilée comme dépendance mais hors des lints du projet.
-exclude = ["vendor/outlook-pst"]
+exclude = ["vendor/outlook-pst", "fuzz"]
 resolver = "3"
 members = [
     "crates/mf-core",

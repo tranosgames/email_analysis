@@ -1,0 +1,24 @@
+[package]
+name = "mf-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+mf-pst = { path = "../crates/mf-pst" }
+mf-engine = { path = "../crates/mf-engine" }
+mf-core = { path = "../crates/mf-core" }
+
+# Crate à part, hors de l'espace de travail : il ne se construit qu'avec `cargo fuzz`.
+[workspace]
+
+[[bin]]
+name = "pst_open"
+path = "fuzz_targets/pst_open.rs"
+test = false
+doc = false
+bench = false

@@ -156,10 +156,10 @@ corpus : `tests/corpus/pst/`. Numérotation propre à la feature, préfixe `P`.
 ## Phase 8: Polish & Cross-Cutting Concerns
 
 - [ ] P042 [P] Fuzzing : cible `pst_open` (`fuzz/`) sur le chemin d'ouverture et de parcours ; corpus de départ = PST du corpus
-- [ ] P043 [P] Proposer les correctifs (tolérance, OST) en amont à `outlook-pst` ; consigner l'état dans `NOTICE.md`
-- [ ] P044 [P] README et documentation projet : PST/OST, mesures, limites ; capture d'écran
+- [ ] P043 [P] Proposer les correctifs (tolérance, OST) en amont à `outlook-pst` ; consigner l'état dans `NOTICE.md` — *préparé, non soumis : `vendor/outlook-pst/upstream-proposal/` (patch contre `main` cfb721d, 11 tests amont réussis, texte de la demande en anglais) ; état consigné dans `NOTICE.md`. Le correctif officiel d0f9f00 (blocage de `root_hierarchy_table`) a été repris dans notre copie. Soumission : décision du mainteneur*
+- [x] P044 [P] README et documentation projet : PST/OST, mesures, limites ; capture d'écran — *README : boîtes, recherche, export, empreinte de l'élément, limites ; captures `apercu-pst*.png` ; mesures dans `research.md` R10 et `quickstart.md`*
 - [ ] P045 Valider SC-003 sur une boîte volumineuse fournie par l'utilisateur (`mf pst bench` + page web) ; consigner les mesures
-- [ ] P046 Exécuter quickstart.md de bout en bout
+- [x] P046 Exécuter quickstart.md de bout en bout — *`quickstart.md`, section « Exécution du 2026-11-23 » : scénarios 1, 2, 4, 5 et mesures réussis ; scénario 3 vérifié par `test:box` et l'e2e web (fenêtre Tauri non exécutable ici)*
 
 ---
 

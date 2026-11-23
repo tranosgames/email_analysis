@@ -101,6 +101,15 @@ and recomputable from the mailbox.
 
 ![Selecting items for export; the seal shows the mailbox hash and the item's content hash](docs/apercu-pst-export.png)
 
+**Limits worth knowing.**
+- Deleted items that are still in the file but no longer referenced are not recovered yet.
+- A reconstructed `.eml` is not the original message: a DKIM signature cannot be checked in it.
+  The `.msg` export keeps the Outlook properties as stored.
+- A truncated or damaged mailbox opens as far as it can be read. The cut, unreadable folders and
+  partially readable folder tables are listed, never hidden.
+- Measured on public mailboxes up to 8 GB (opening in milliseconds, under 310 MB in the browser).
+  Validation on a large real mailbox with tens of thousands of messages is still to be done.
+
 **Find a message without reading them all.** Search and filter a folder or the whole mailbox by
 sender name, recipient, subject, date range, size, attachments or Message-ID — using only the folder
 tables, so not a single message is opened. Once you have opened a few, filter them by verdict or

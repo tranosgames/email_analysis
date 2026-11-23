@@ -30,7 +30,25 @@ dossiers, de messages et de pièces jointes identiques pour tous (voir `tests/co
    pour ouvrir les pièces jointes d'un message embarqué, que la bibliothèque n'expose que sous la
    forme `Rc<dyn Message>`.
 
+3. `src/messaging/store.rs`, `root_hierarchy_table` : **correctif officiel d0f9f00** de Microsoft
+   (mai 2026, « deadlock in root_hierarchy_table ») repris tel quel : l'appel ne revenait jamais.
+   Nous n'appelons pas cette fonction ; le correctif évite un piège. Test :
+   `crates/mf-pst/tests/vendor_fixes.rs`.
+
+## État en amont (2026-11-23)
+
+`main` de `microsoft/outlook-pst-rs` (dernier commit `cfb721d`, 2026-09-14) ne contient **toujours
+pas** ces correctifs de lecture : il rejette encore le compteur de libération des tas
+(`InvalidHeapPageFreeCount`), les messages sans sous-arbre (`MessageSubNodeTreeNotFound`) et les
+OST 2013+.
+
+Une proposition prête à soumettre est dans `upstream-proposal/` : le patch contre `cfb721d`
+(correctifs de lecture du fork, `open_attachment`, dépendance `flate2` ; **sans** notre ouverture
+en lecture seule, choix propre à l'outil) et le texte de la demande de fusion, en anglais. Les
+11 tests du dépôt amont passent avec le patch. Elle n'a **pas** été soumise : c'est au mainteneur
+d'Email Analysis de décider de l'ouvrir (ou de laisser l'auteur du fork le faire).
+
 ## Retour à la version officielle
 
-Les correctifs ont été proposés à Microsoft par l'auteur du fork. Dès qu'une version officielle
-les contient (et lit les OST 2013+), ce dossier est supprimé au profit de la dépendance publiée.
+Dès qu'une version officielle contient ces correctifs (et lit les OST 2013+), ce dossier est
+supprimé au profit de la dépendance publiée.
